@@ -1,0 +1,238 @@
+from os.path import join
+
+#Output dirs
+permanentDir = config["permanentDir"]
+corpusDir = permanentDir + "/corpus"
+evalDir = permanentDir + "/eval"
+modelDir = permanentDir + "/model"
+
+marian=config["marianDir"]
+moses=config["mosesDir"]
+subword_nmt=config["subwordNmtDir"]
+tools=config["toolsDir"]
+
+vocabSize=config["nmtVocabSize"]
+bpeOperations=config["bpeOperations"]
+
+LANG1=config["lang1"]
+LANG2=config["lang2"]
+
+vocabSizeL1=vocabSize[LANG1]
+vocabSizeL2=vocabSize[LANG2]
+
+#normalizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG1
+#normalizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 
+
+tokenizer_l1 = moses + "/scripts/tokenizer/tokenizer.perl -a -l " + LANG1
+tokenizer_l2 = moses + "/scripts/tokenizer/tokenizer.perl -a -l " + LANG2
+
+detokenizer = moses + "/scripts/tokenizer/detokenizer.perl -l " + LANG2
+
+sentenceSplitter1 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG1
+sentenceSplitter2 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG2
+
+#NMT commands
+trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(config["marianArgs"]) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
+
+translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation ".format(marian, config["gpuId"])
+
+bleuCmd = moses + "/scripts/generic/multi-bleu-detok.perl"
+
+#Input data prefixes
+trainPrefixes=config["initCorpusTrainPrefix"]
+devPrefix=config["initCorpusDevPrefix"]
+testPrefixes=config["initCorpusTestPrefix"]
+assert(len(devPrefix) == 1)
+
+############################################# EVALUATION #############################################################
+
+def allTestNames(dataset):
+    names = []
+    for f in dataset:
+        names.append(os.path.basename(f))
+    return names
+
+rule report:
+    input:
+        expand(evalDir+"/{name}.bleu", name=allTestNames(testPrefixes))
+    output:
+        evalDir+"/report"
+    run:
+        with open(output[0], "wt") as outHandle:
+            for file in input:
+                with open(file, "rt") as inHandle:
+                    str = inHandle.read()
+                    outHandle.write(os.path.basename(file).replace(".bleu",""))
+                    outHandle.write("\t")
+                    outHandle.write(str)
+
+rule multibleu:
+    input:
+        trans=evalDir+"/{name}.output.detokenized"
+        ,
+        ref=corpusDir+"/{name}."+"{lang}".format(lang=LANG2)
+    output:
+        evalDir+"/{name}.bleu"
+    shell:
+        "cat {input.trans} | {bleuCmd} {input.ref} > {output}"
+
+rule translate_only:
+    input:
+        trans=evalDir+"/in.output.detokenized"
+
+    output:
+        evalDir+"/output"
+    shell:
+      	#"hostname;"
+        "cp {input} {output}"
+
+##########################################  RUNNING MT ENGINE ##########################################
+
+
+rule translate_test:
+    input:
+        modelPrevious="{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
+        ,
+        test=corpusDir+"/{name}." + "{lang}".format(lang=LANG1)
+    output:
+        evalDir+"/{name}.output.detokenized"
+    params:
+        model="{dir}/marian/{modelFile}".format(dir=modelDir, modelFile=config["marianModelFile"])
+    shell:
+        "cat {input.test} | {translateCmd} -c {params.model} > {output}"
+
+rule train_nmt:
+    input:
+        train=[corpusDir+"/train.norm.clean.{lang}".format(lang=LANG1),
+               corpusDir+"/train.norm.clean.{lang}".format(lang=LANG2)]
+        ,
+        valid=[corpusDir+"/dev.{lang}".format(lang=LANG1),
+               corpusDir+"/dev.{lang}".format(lang=LANG2)]
+
+    output:
+        "{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
+    shell:
+        "{trainCmd} -t {input.train} --valid-sets {input.valid} --vocabs {modelDir}/vocab.{LANG1}{LANG2}.spm {modelDir}/vocab.{LANG1}{LANG2}.spm --dim-vocabs {vocabSizeL1} {vocabSizeL2}  -m {modelDir}/marian/model.npz"
+
+
+####################################################### CLEAN ###########################################################
+## Clean the tokenized corpus, then use the lines-retained file to filter the untokenized version of the corpus ########
+
+rule clean:
+    input:
+        "{pref}.norm.tok."+"{lang1}".format(lang1=LANG1),
+        "{pref}.norm.tok."+"{lang2}".format(lang2=LANG2),
+        "{pref}.norm."+"{lang1}".format(lang1=LANG1),
+        "{pref}.norm."+"{lang2}".format(lang2=LANG2)
+    output:
+        "{pref}.norm.clean."+"{lang1}".format(lang1=LANG1)
+        ,
+        "{pref}.norm.clean."+"{lang2}".format(lang2=LANG2)
+    shell:
+        "{moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.norm.tok {LANG1} {LANG2} {wildcards.pref}.norm.tok.clean 1 80 {wildcards.pref}.norm.lines-retained;"
+        "python3 {tools}/filter-lines-retained.py {wildcards.pref}.norm.lines-retained < {wildcards.pref}.norm.{LANG1}  > {wildcards.pref}.norm.clean.{LANG1};"
+        "python3 {tools}/filter-lines-retained.py {wildcards.pref}.norm.lines-retained < {wildcards.pref}.norm.{LANG2}  > {wildcards.pref}.norm.clean.{LANG2};"
+
+####################################################### TOKENIZE ###########################################################
+##  Tokenize just to be able to clean the corpus ###
+
+rule tokenize_file_l1:
+    input:
+        "{pref}.norm."+"{lang}".format(lang=LANG1)
+    output:
+        "{pref}.norm.tok."+"{lang}".format(lang=LANG1)
+    shell:
+        "cat {input} | {tokenizer_l1} > {output}"
+
+rule tokenize_file_l2:
+    input:
+        "{pref}.norm."+"{lang}".format(lang=LANG2)
+    output:
+        "{pref}.norm.tok."+"{lang}".format(lang=LANG2)
+    shell:
+        "cat {input} | {tokenizer_l2} > {output}"
+
+rule normalize_file_l1:
+   input:
+        "{pref}."+"{lang}".format(lang=LANG1)
+   output:
+        "{pref}.norm."+"{lang}".format(lang=LANG1)
+   shell:
+        "cat {input} | {moses}/scripts/tokenizer/normalize-punctuation.perl -l {LANG1}  > {output}"
+
+rule normalize_file_l2:
+   input:
+        "{pref}."+"{lang}".format(lang=LANG2)
+   output:
+        "{pref}.norm."+"{lang}".format(lang=LANG2)
+   shell:
+        "cat {input} | {moses}/scripts/tokenizer/normalize-punctuation.perl -l {LANG2}  > {output}"
+
+
+###################################### PREPARE DATA ##############################################
+
+rule prepare_traindata:
+    input:
+         l1=expand("{dataset}.{lang}", dataset=trainPrefixes, lang=LANG1)
+         ,
+         l2=expand("{dataset}.{lang}", dataset=trainPrefixes, lang=LANG2)
+    output:
+         l1=corpusDir+"/train.{lang}".format(lang=LANG1)
+         ,
+         l2=corpusDir+"/train.{lang}".format(lang=LANG2)
+    shell:
+         "mkdir -p {corpusDir}; cat {input.l1} > {output.l1} && cat {input.l2} > {output.l2}"
+
+rule prepare_devdata:
+    input: 
+         l1=expand("{dataset}.{lang}", dataset=devPrefix, lang=LANG1)
+         ,
+         l2=expand("{dataset}.{lang}", dataset=devPrefix, lang=LANG2)
+    output: 
+         l1=corpusDir+"/dev.{lang}".format(lang=LANG1)
+         ,
+         l2=corpusDir+"/dev.{lang}".format(lang=LANG2)
+    shell:
+         "mkdir -p {corpusDir}; cat {input.l1} > {output.l1} && cat {input.l2} > {output.l2}"
+
+rule prepare_test:
+    input:
+         l1=expand("{dataset}.{lang}", dataset=testPrefixes, lang=LANG1)
+         ,
+         l2=expand("{dataset}.{lang}", dataset=testPrefixes, lang=LANG2)
+    output:
+         expand(corpusDir+"/{name}.{lang}", name=allTestNames(testPrefixes), lang=LANG1)
+         ,
+         expand(corpusDir+"/{name}.{lang}", name=allTestNames(testPrefixes), lang=LANG2)
+    shell:
+         "mkdir -p {corpusDir}; cp -r {input.l1} {input.l2} {corpusDir}"
+
+rule prepare_translate_only:
+    input:
+         l1="in"
+    output:
+         corpusDir+"/in.{lang}".format(lang=LANG1)
+    shell:
+         "cp {input} {output}"
+
+ruleorder: decompressGZ > decompressXZ
+
+rule decompressGZ:
+    input:
+         "{pref}.{lang}.gz"
+    output:
+         temp("{pref}.{lang}")
+    wildcard_constraints:
+         lang="({l1}|{l2})".format(l1=LANG1, l2=LANG2)
+    shell:
+         "zcat {input} > {output}"
+
+rule decompressXZ:
+    input:
+         "{pref}.{lang}.xz"
+    output:
+         temp("{pref}.{lang}")
+    wildcard_constraints:
+         lang="({l1}|{l2})".format(l1=LANG1, l2=LANG2)
+    shell:
+         "xzcat -T 0 {input} > {output}"
