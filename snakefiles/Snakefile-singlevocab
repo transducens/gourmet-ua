@@ -9,7 +9,6 @@ modelDir = permanentDir + "/model"
 marian=config["marianDir"]
 moses=config["mosesDir"]
 subword_nmt=config["subwordNmtDir"]
-vocabSize=config["nmtVocabSize"]
 bpeOperations=config["bpeOperations"]
 
 LANG1=config["lang1"]
