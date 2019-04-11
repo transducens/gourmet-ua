@@ -98,8 +98,8 @@ rule translate_test:
 rule train_nmt:
     input:
         vocab=modelDir+"/vocab."+LANG1+LANG2+".yml",
-        train=[corpusDir+"/train.clean-bpe.seg.{lang}".format(lang=LANG1),
-               corpusDir+"/train.clean-bpe.seg.{lang}".format(lang=LANG2)]
+        train=[corpusDir+"/train.clean-bpe.{lang}".format(lang=LANG1),
+               corpusDir+"/train.clean-bpe.{lang}".format(lang=LANG2)]
         ,
         valid=[corpusDir+"/dev.bpe.{lang}".format(lang=LANG1),
                corpusDir+"/dev.bpe.{lang}".format(lang=LANG2)]
