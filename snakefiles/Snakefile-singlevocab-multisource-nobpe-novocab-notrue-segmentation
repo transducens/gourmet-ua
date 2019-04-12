@@ -16,6 +16,10 @@ externalVocab=config["externalVocab"]
 externalTruecasers=config["externalTruecasers"]
 addMark=config["addMark"]
 
+segModel=config["segModel"]
+segParams=config["segParams"]
+smartSegmentation=config["smartSegmentationDir"]
+
 ssuffix=config["ssuffix"]
 wwMark=config["wwMark"]
 
@@ -147,7 +151,7 @@ rule apply_truecaser_2s:
         file='{name}.tok.{lang}.2s'
     output:
         '{name}.tc.{lang}.2s'
-     params:
+    params:
          tModel=lambda w: externalTruecasers[w.lang]
     shell:
         "cat {input.file} | {moses}/scripts/recaser/truecase.perl -model {params.tModel} > {output}"
@@ -245,6 +249,7 @@ rule debpe:
         "cat {input} | sed -r 's/(@@ )|(@@ ?$)//g' > {output}"
 
 ##################################### MORPHOLOGICAL SEGMENTATION ##################
+
 
 ruleorder: morph_segment_2s > morph_segment
 

@@ -14,6 +14,10 @@ externalVocab=config["externalVocab"]
 externalTruecasers=config["externalTruecasers"]
 addMark=config["addMark"]
 
+segModel=config["segModel"]
+segParams=config["segParams"]
+smartSegmentation=config["smartSegmentationDir"]
+
 LANG1=config["lang1"]
 LANG2=config["lang2"]
 
@@ -98,8 +102,8 @@ rule translate_test:
 rule train_nmt:
     input:
         vocab=modelDir+"/vocab."+LANG1+LANG2+".yml",
-        train=[corpusDir+"/train.clean-bpe.seg.{lang}".format(lang=LANG1),
-               corpusDir+"/train.clean-bpe.seg.{lang}".format(lang=LANG2)]
+        train=[corpusDir+"/train.clean-bpe.{lang}".format(lang=LANG1),
+               corpusDir+"/train.clean-bpe.{lang}".format(lang=LANG2)]
         ,
         valid=[corpusDir+"/dev.bpe.{lang}".format(lang=LANG1),
                corpusDir+"/dev.bpe.{lang}".format(lang=LANG2)]
@@ -128,7 +132,7 @@ rule morph_segment:
       '{name}tc.seg.{lang}'
    params:
       sModel=lambda w: segModel[w.lang]
-  shell:
+   shell:
       "if [ '{params.sModel}' != ''  ]; then bash {smartSegmentation}/segment.sh -c {input} -m {params.sModel} -l {wildcards.lang} {segParams}  > {output} ; else cp {input} {output}  ;  fi"
 
 
@@ -237,7 +241,7 @@ rule apply_bpe_train:
         "{pref}.clean-bpe.{lang}"
     params:
         mark=lambda w: addMark[w.lang]
-
+    shell:
         "{subword_nmt}/subword_nmt/apply_bpe.py -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then sed 's:^:{params.mark} :'; else  cat -;  fi  }}  > {output}"
 
 
