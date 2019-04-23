@@ -14,7 +14,7 @@ bpeOperations=config["bpeOperations"]
 tools=config["toolsDir"]
 
 ssuffix=None
-if "ssufix" in config:
+if "ssuffix" in config:
     ssuffix=config["ssuffix"]
 wwMark="gourmetwwtranslation"
 if "wwMark" in config:
