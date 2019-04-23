@@ -109,7 +109,7 @@ rule train_nmt:
     output:
         "{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
     params:
-        additionalVocab= "{input.vocab}" if ssuffix else ""
+        additionalVocab= lambda wildcards,input:  input.vocab if ssuffix else ""
     shell:
         "mkdir -p {modelDir}/marian ;{trainCmd} -t {input.train} --valid-sets {input.valid} --vocabs {input.vocab} {input.vocab} {params.additionalVocab} -m {modelDir}/marian/model.npz"
 
