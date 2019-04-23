@@ -52,7 +52,7 @@ if "externalTruecasers" in config:
     externalTruecasers=config["externalTruecasers"]
 
 #Mark for multilingual MT
-addMark={LANG1:"", LANG2:""}
+addMark={LANG1:"", LANG2:"", LANG2+"."+str(ssuffix):""}
 if "addMark" in config:
     addMark=config["addMark"]
 
