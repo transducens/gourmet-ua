@@ -21,9 +21,23 @@ if "ssuffix" in config:
 wwMark="gourmetwwtranslation"
 if "wwMark" in config:
     wwMark=config["wwMark"]
+swapInputs=False
+if "swapInputs" in config:
+    if config["swapInputs"]:
+        swapInputs=True
 
 LANG1=config["lang1"]
 LANG2=config["lang2"]
+
+multilangs=[LANG1,LANG2]
+multilangs_test=[LANG1]
+if ssuffix:
+    if swapInputs:
+        multilangs=[LANG2+".2s",LANG1,LANG2]
+        multilangs_test=[LANG2+".2s",LANG1]
+    else:
+        multilangs=[LANG1,LANG2+".2s",LANG2]
+        multilangs_test=[LANG1,LANG2+".2s"]
 
 #Precomputed BPE, vocab, truecasers
 externalVocab=""
@@ -120,7 +134,7 @@ rule translate_test:
     input:
         modelPrevious="{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
         ,
-        test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s"] if ssuffix else [LANG1])
+        test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test)
     output:
         evalDir+"/{name}.output"
     params:
@@ -132,8 +146,8 @@ rule translate_test:
 rule train_nmt:
     input:
         vocab=modelDir+"/vocab."+LANG1+LANG2+".yml",
-        train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2]),
-        valid=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
+        train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs),
+        valid=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
     output:
         "{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
     params:
@@ -147,7 +161,7 @@ ruleorder: make_vocab_yml_from_external > make_vocab_yml
 
 rule make_vocab_yml:
     input:
-        expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
+        expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
     output:
         modelDir+"/vocab.{lang1}{lang2}.yml".format(lang1=LANG1,lang2=LANG2)
     shell:
@@ -361,7 +375,7 @@ ruleorder: learn_bpe_external > learn_bpe
 
 rule learn_bpe:
     input:
-        expand("{corpusDir}/train.clean-tc.seg.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
+        expand("{corpusDir}/train.clean-tc.seg.{lang}",corpusDir=corpusDir,lang=multilangs)
     output:
         modelDir+"/vocab."+"{lang1}{lang2}.bpe".format(lang1=LANG1, lang2=LANG2 )
     shell:
