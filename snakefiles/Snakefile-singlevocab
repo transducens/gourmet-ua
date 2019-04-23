@@ -6,13 +6,19 @@ corpusDir = permanentDir + "/corpus"
 evalDir = permanentDir + "/eval"
 modelDir = permanentDir + "/model"
 
+#Software dependencies
 marian=config["marianDir"]
 moses=config["mosesDir"]
 subword_nmt=config["subwordNmtDir"]
 bpeOperations=config["bpeOperations"]
 tools=config["toolsDir"]
-ssuffix=config["ssuffix"]
-wwMark=config["wwMark"]
+
+ssuffix=None
+if "ssufix" in config:
+    ssuffix=config["ssuffix"]
+wwMark="gourmetwwtranslation"
+if "wwMark" in config:
+    wwMark=config["wwMark"]
 
 LANG1=config["lang1"]
 LANG2=config["lang2"]
