@@ -12,6 +12,7 @@ moses=config["mosesDir"]
 subword_nmt=config["subwordNmtDir"]
 bpeOperations=config["bpeOperations"]
 tools=config["toolsDir"]
+smartSegmentation=config["smartSegmentationDir"]
 
 #Multisource
 ssuffix=None
@@ -36,6 +37,19 @@ externalTruecasers={LANG1:"", LANG2:""}
 if "externalTruecasers" in config:
     externalTruecasers=config["externalTruecasers"]
 
+#Mark for multilingual MT
+addMark={LANG1:"", LANG2:""}
+if "addMark" in config:
+    addMark=config["addMark"]
+
+#Morphological segmentation
+segModel={LANG1:"", LANG2:""}
+if "segModel" in config:
+    segModel=config["segModel"]
+
+segParams=""
+if "segParams" in config:
+    segParams=config["segParams"]
 
 tokenizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG1 + " | " + moses + "/scripts/tokenizer/tokenizer.perl -a -l " + LANG1
 tokenizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 + " | " + moses + "/scripts/tokenizer/tokenizer.perl -a -l " + LANG2
@@ -292,27 +306,56 @@ rule debpe:
     shell:
         "cat {input} | sed -r 's/(@@ )|(@@ ?$)//g' > {output}"
 
+##################################### MORPHOLOGICAL SEGMENTATION ##################
+
+ruleorder: morph_segment_2s > morph_segment
+
+rule morph_segment:
+    input:
+        '{name}tc.{lang}'
+    output:
+        '{name}tc.seg.{lang}'
+    params:
+        sModel=lambda w: segModel[w.lang]
+    shell:
+        "if [ '{params.sModel}' != ''  ]; then bash {smartSegmentation}/segment.sh -c {input} -m {params.sModel} -l {wildcards.lang} {segParams}  > {output} ; else cp {input} {output}  ;  fi"
+
+rule morph_segment_2s:
+    input:
+        '{name}tc.{lang}.2s'
+    output:
+        '{name}tc.seg.{lang}.2s'
+    params:
+        sModel=lambda w: segModel[w.lang]
+    shell:
+        "if [ '{params.sModel}' != ''  ]; then bash {smartSegmentation}/segment.sh -c {input} -m {params.sModel} -l {wildcards.lang} {segParams}  > {output} ; else cp {input} {output}  ;  fi"
+
+
 ############################################## BPE ##############################################
 
 rule apply_bpe_test:
     input:
-        file="{pref}.tc.{lang}"
+        file="{pref}.tc.seg.{lang}"
         ,
         vocab="{dir}/".format(dir=modelDir)+"vocab.{lang1}{lang2}.bpe".format(lang1=LANG1, lang2=LANG2)
     output:
         "{pref}.bpe.{lang}"
+    params:
+        mark=lambda w: addMark[w.lang]
     shell:
-        "{subword_nmt}/subword_nmt/apply_bpe.py --glossaries {wwMark}  -c {input.vocab} < {input.file} > {output}"
+        "{subword_nmt}/subword_nmt/apply_bpe.py --glossaries {wwMark}  -c {input.vocab} < {input.file} |  sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} > {output}"
 
 rule apply_bpe_train:
     input:
-        file="{pref}.clean-tc.{lang}"
+        file="{pref}.clean-tc.seg.{lang}"
         ,
         vocab="{dir}/".format(dir=modelDir)+"vocab.{lang1}{lang2}.bpe".format(lang1=LANG1, lang2=LANG2)
     output:
         "{pref}.clean-bpe.{lang}"
+    params:
+        mark=lambda w: addMark[w.lang]
     shell:
-        "{subword_nmt}/subword_nmt/apply_bpe.py  --glossaries {wwMark} -c {input.vocab} < {input.file} > {output}"
+        "{subword_nmt}/subword_nmt/apply_bpe.py  --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} > {output}"
 
 ruleorder: learn_bpe_external > learn_bpe
 
