@@ -209,7 +209,7 @@ rule learn_truecaser_external:
         l1=externalTruecasers[LANG1],
         l2=externalTruecasers[LANG2]
     output:
-        l1=expand("{dir}/truecaser/truecase-model.{lang}",dir=modelDir,lang=LANG1)
+        l1=expand("{dir}/truecaser/truecase-model.{lang}",dir=modelDir,lang=LANG1),
         l2=expand("{dir}/truecaser/truecase-model.{lang}",dir=modelDir,lang=LANG2)
     shell:
         "cp {input.l1} {output.l1}; cp {input.l2} {output.l2}"
