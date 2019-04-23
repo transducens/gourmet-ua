@@ -105,7 +105,7 @@ rule train_nmt:
     input:
         vocab=modelDir+"/vocab."+LANG1+LANG2+".yml",
         train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2]),
-        valid=expand("{corpusDir}/dev.bpe.{lang}",lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
+        valid=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
     output:
         "{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
     params:
