@@ -361,7 +361,7 @@ ruleorder: learn_bpe_external > learn_bpe
 
 rule learn_bpe:
     input:
-        expand("{corpusDir}/train.clean-tc.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
+        expand("{corpusDir}/train.clean-tc.seg.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
     output:
         modelDir+"/vocab."+"{lang1}{lang2}.bpe".format(lang1=LANG1, lang2=LANG2 )
     shell:
