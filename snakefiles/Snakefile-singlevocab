@@ -13,6 +13,7 @@ subword_nmt=config["subwordNmtDir"]
 bpeOperations=config["bpeOperations"]
 tools=config["toolsDir"]
 
+#Multisource
 ssuffix=None
 if "ssuffix" in config:
     ssuffix=config["ssuffix"]
@@ -22,6 +23,19 @@ if "wwMark" in config:
 
 LANG1=config["lang1"]
 LANG2=config["lang2"]
+
+#Precomputed BPE, vocab, truecasers
+externalVocab=""
+if "externalVocab" in config:
+    externalVocab=config["externalVocab"]
+externalBpe=""
+if "bpeModel" in config:
+    externalBpe=config["bpeModel"]
+
+externalTruecasers={LANG1:"", LANG2:""}
+if "externalTruecasers" in config:
+    externalTruecasers=config["externalTruecasers"]
+
 
 tokenizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG1 + " | " + moses + "/scripts/tokenizer/tokenizer.perl -a -l " + LANG1
 tokenizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 + " | " + moses + "/scripts/tokenizer/tokenizer.perl -a -l " + LANG2
@@ -115,6 +129,8 @@ rule train_nmt:
 
 ################################################## MARIAN VOCAB ################################################################
 
+ruleorder: make_vocab_yml_from_external > make_vocab_yml
+
 rule make_vocab_yml:
     input:
         expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
@@ -122,6 +138,14 @@ rule make_vocab_yml:
         modelDir+"/vocab.{lang1}{lang2}.yml".format(lang1=LANG1,lang2=LANG2)
     shell:
         "cat {input} | {marian}/build/marian-vocab  > {output}"
+
+rule make_vocab_yml_from_external:
+    input:
+        externalVocab
+    output:
+        modelDir+"/vocab.{lang1}{lang2}.yml".format(lang1=LANG1,lang2=LANG2)
+    shell:
+        "cat {input} > {output}"
 
 ####################################################### TRUECASE ###########################################################
 
@@ -169,6 +193,8 @@ rule apply_truecaser_train_2s:
     shell:
         "cat {input.file} | {moses}/scripts/recaser/truecase.perl -model {input.model} > {output}"
 
+ruleorder: learn_truecaser_external > learn_truecaser
+
 rule learn_truecaser:
     input:
         corpusDir+"/train.clean.{lang}"
@@ -177,6 +203,16 @@ rule learn_truecaser:
     shell:
         "mkdir -p {modelDir}/truecaser;"
         "{moses}/scripts/recaser/train-truecaser.perl -corpus {input} -model {output}"
+
+rule learn_truecaser_external:
+    input:
+        l1=externalTruecasers[LANG1],
+        l2=externalTruecasers[LANG2]
+    output:
+        l1=expand("{dir}/truecaser/truecase-model.{lang}",dir=modelDir,lang=LANG1)
+        l2=expand("{dir}/truecaser/truecase-model.{lang}",dir=modelDir,lang=LANG2)
+    shell:
+        "cp {input.l1} {output.l1}; cp {input.l2} {output.l2}"
 
 ####################################################### CLEAN ###########################################################
 
@@ -278,6 +314,8 @@ rule apply_bpe_train:
     shell:
         "{subword_nmt}/subword_nmt/apply_bpe.py  --glossaries {wwMark} -c {input.vocab} < {input.file} > {output}"
 
+ruleorder: learn_bpe_external > learn_bpe
+
 rule learn_bpe:
     input:
         expand("{corpusDir}/train.clean-tc.{lang}",corpusDir=corpusDir,lang=[LANG1,LANG2+".2s",LANG2] if ssuffix else [LANG1,LANG2])
@@ -285,6 +323,14 @@ rule learn_bpe:
         modelDir+"/vocab."+"{lang1}{lang2}.bpe".format(lang1=LANG1, lang2=LANG2 )
     shell:
         "cat {input}|  sed 's:{wwMark}::g'  | sed -r 's:[ ]+: :g' | {subword_nmt}/subword_nmt/learn_bpe.py -s {bpeOperations}  > {output}"
+
+rule learn_bpe_external:
+    input:
+        externalBpe
+    output:
+        modelDir+"/vocab."+"{lang1}{lang2}.bpe".format(lang1=LANG1, lang2=LANG2 )
+    shell:
+        "cat {input} > {output}"
 
 ###################################### PREPARE DATA ##############################################
 
