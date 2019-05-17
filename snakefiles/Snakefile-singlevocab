@@ -26,6 +26,13 @@ if "swapInputs" in config:
     if config["swapInputs"]:
         swapInputs=True
 
+#Interleaving
+interleaving_tl=False
+analyzer_tl=None
+if "analyzer_tl" in config:
+    interleaving_tl=True
+    analyzer_tl=config["analyzer_tl"]
+
 LANG1=config["lang1"]
 LANG2=config["lang2"]
 
@@ -65,8 +72,11 @@ segParams=""
 if "segParams" in config:
     segParams=config["segParams"]
 
-tokenizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG1 + " | " + moses + "/scripts/tokenizer/tokenizer.perl -a -l " + LANG1
-tokenizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 + " | " + moses + "/scripts/tokenizer/tokenizer.perl -a -l " + LANG2
+tokOptions="-a"
+if interleaving_tl:
+    tokOptions="-a -no-escape"
+tokenizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG1 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG1
+tokenizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG2
 detokenizer = moses + "/scripts/tokenizer/detokenizer.perl -l " + LANG2
 
 sentenceSplitter1 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG1
@@ -369,7 +379,7 @@ rule apply_bpe_train:
     params:
         mark=lambda w: addMark[w.lang]
     shell:
-        "{subword_nmt}/subword_nmt/apply_bpe.py  --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} > {output}"
+        "if [ \"{interleaving_tl}\" == \"True\" -a \"{w.lang}\" == \"{LANG2}\" ]; then  {analyzer_tl} < {w.pref}.tok.{w.lang} > {w.pref}.tok.{w.lang}.analyzed ; fi; {subword_nmt}/subword_nmt/apply_bpe.py  --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{w.lang}\" == \"{LANG2}\" ]; then python3 {toolsDir}/scripts/generate-interleaving-corpus.py  {w.pref}.tok.{w.lang}.analyzed  ; else cat - ; fi  }} > {output}"
 
 ruleorder: learn_bpe_external > learn_bpe
 
