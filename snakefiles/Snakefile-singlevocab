@@ -105,7 +105,7 @@ def allTestNames(dataset):
 
 rule report:
     input:
-        expand(evalDir+"/{name}.bleu", name=allTestNames(testPrefixes))
+        expand(evalDir+"/{name}.chrf", name=allTestNames(testPrefixes), metric=["bleu","chrf"])
     output:
         evalDir+"/report"
     run:
@@ -113,7 +113,7 @@ rule report:
             for file in input:
                 with open(file, "rt") as inHandle:
                     str = inHandle.read()
-                    outHandle.write(os.path.basename(file).replace(".bleu",""))
+                    outHandle.write(os.path.basename(file))
                     outHandle.write("\t")
                     outHandle.write(str)
 
@@ -126,6 +126,16 @@ rule multibleu:
         evalDir+"/{name}.bleu"
     shell:
         "cat {input.trans} | {bleuCmd} {input.ref} > {output}"
+
+rule chrf:
+    input:
+        trans=evalDir+"/{name}.output.detokenized"
+        ,
+        ref=corpusDir+"/{name}."+"{lang}".format(lang=LANG2)
+    output:
+        evalDir+"/{name}.chrf"
+    shell:
+        "{chrfCmd} -H {input.trans}  -R {input.ref} > {output}"
 
 rule translate_only:
     input:
@@ -312,7 +322,7 @@ rule detok:
     output:
         "{pref}.output.detokenized"
     shell:
-        "cat {input} | {detokenizer} > {output}"
+        "cat {input} | {{ if [ \"{interleaving_tl}\" == \"True\" ]; then sed 's:interleaved_[^ ]* ::g'  ; else  cat - ; fi }}  | {detokenizer} > {output}"
 
 rule detruecase:
     input:
