@@ -1,6 +1,5 @@
 import sys
 import argparse
-from itertools import izip
 
 PREFIX="interleaved_"
 BPEMARK="@@"
@@ -29,4 +28,4 @@ with open(args.factored_corpus) as f_factored:
 				out_toks.append(PREFIX+toks_factored[ positionFactored])
 				positionFactored+=1
 			out_toks.append(bpedtok)
-        	print(" ".join(out_toks))
+		print(" ".join(out_toks))
