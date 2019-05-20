@@ -88,6 +88,7 @@ trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join
 translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
 
 bleuCmd = moses + "/scripts/generic/multi-bleu-detok.perl"
+chrfCmd = "python3 "+tools + "/chrF/chrF++.py"
 
 #Input data prefixes
 trainPrefixes=config["initCorpusTrainPrefix"]
@@ -322,7 +323,7 @@ rule detok:
     output:
         "{pref}.output.detokenized"
     shell:
-        "cat {input} | {{ if [ \"{interleaving_tl}\" == \"True\" ]; then sed 's:interleaved_[^ ]* ::g'  ; else  cat - ; fi }}  | {detokenizer} > {output}"
+        "cat {input} | {{ if [ \"{interleaving_tl}\" == \"True\" ]; then sed 's:[Ii]nterleaved_[^ ]* ::g'  ; else  cat - ; fi }}  | {detokenizer} > {output}"
 
 rule detruecase:
     input:
