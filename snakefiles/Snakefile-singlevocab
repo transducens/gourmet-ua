@@ -106,7 +106,7 @@ def allTestNames(dataset):
 
 rule report:
     input:
-        expand(evalDir+"/{name}.chrf", name=allTestNames(testPrefixes), metric=["bleu","chrf"])
+        expand(evalDir+"/{name}.{metric}", name=allTestNames(testPrefixes), metric=["bleu","chrf"])
     output:
         evalDir+"/report"
     run:
