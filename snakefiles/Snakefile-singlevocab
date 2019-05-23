@@ -323,7 +323,7 @@ rule detok:
     output:
         "{pref}.output.detokenized"
     shell:
-        "cat {input} | {{ if [ \"{interleaving_tl}\" == \"True\" ]; then sed 's:[Ii]nterleaved_[^ ]* ::g'  ; else  cat - ; fi }}  | {detokenizer} > {output}"
+        "cat {input}  | {detokenizer} > {output}"
 
 rule detruecase:
     input:
@@ -331,7 +331,7 @@ rule detruecase:
     output:
         "{pref}.output.detruecased"
     shell:
-        "cat {input} | {moses}/scripts/recaser/detruecase.perl > {output}"
+        "cat {input} | {{ if [ \"{interleaving_tl}\" == \"True\" ]; then sed 's:interleaved_[^ ]* ::g'  ; else  cat - ; fi }} | {moses}/scripts/recaser/detruecase.perl > {output}"
 
 rule debpe:
     input:
