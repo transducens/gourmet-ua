@@ -276,7 +276,7 @@ rule clean:
         "{pref}.clean."+"{lang2}".format(lang2=LANG2),
         "{pref}.lines-retained"
     shell:
-        "{moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.tok {LANG1} {LANG2} {wildcards.pref}.clean 1 80 {wildcards.pref}.lines-retained"
+        "{moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.tok {LANG1} {LANG2} {wildcards.pref}.clean 1 100 {wildcards.pref}.lines-retained"
 
 rule clean_2s:
     input:
