@@ -11,7 +11,7 @@ GPUS="$6"
 rm -f $CHECKPOINTDIR/scores
 for CP in $CHECKPOINTDIR/checkpoint*.pt ; do
   # Translate and evaluate
-  SCORE=$( CUDA_VISIBLE_DEVICES=$GPUS fairseq-interactive  --input $DEVSL --path $CP $DATABIN | grep '^H-' | cut -f 3 | $VALIDATESCRIPT )
+  SCORE=$( CUDA_VISIBLE_DEVICES=$GPUS fairseq-interactive $TRANSLATEARGS  --input $DEVSL --path $CP $DATABIN | grep '^H-' | cut -f 3 | $VALIDATESCRIPT )
   echo "$CP $SCORE" >> $CHECKPOINTDIR/scores
 done
 

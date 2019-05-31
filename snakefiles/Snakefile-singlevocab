@@ -117,6 +117,9 @@ if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
 if backend == Backend.FAIRSEQ:
 		translateCmd = "CUDA_VISIBLE_DEVICES={} fairseq-interactive {}".format(gpuIdCuda, translateArgs)
+		validateScript=config["validateScript"]
+
+
 
 bleuCmd = moses + "/scripts/generic/multi-bleu-detok.perl"
 chrfCmd = "python3 "+tools + "/chrF/chrF++.py"
@@ -233,7 +236,7 @@ rule choose_best_checkpoint:
 		output:
 				"{dir}/checkpoints/checkpoint_best_metric.pt".format(dir=modelDir)
 		shell:
-				"bash {tools}/scripts/select-best-checkpoint-fairseq.sh \"{dir}/checkpoints\" \"{corpusDir}/dev.bpe.{LANG1}\" \"{modelDir}/data-bin"\" \"{validateScript}\" \"{translateArgs}\" \"{gpuIdCuda}\""
+				"bash {tools}/scripts/select-best-checkpoint-fairseq.sh \"{modelDir}/checkpoints\" \"{corpusDir}/dev.bpe.{LANG1}\" \"{modelDir}/data-bin\" \"{validateScript}\" \"{translateArgs}\" \"{gpuIdCuda}\""
 
 ################################################## MARIAN VOCAB ################################################################
 
