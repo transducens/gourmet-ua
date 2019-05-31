@@ -100,6 +100,10 @@ if "marianArgs" in config:
 if "trainArgs" in config:
 		trainArgs=config["trainArgs"]
 
+translateArgs=""
+if "translateArgs" in config:
+	translateArgs=config["translateArgs"]
+
 #NMT commands
 if backend == Backend.MARIAN:
 		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(config["trainArgs"]) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
@@ -109,7 +113,7 @@ if backend == Backend.FAIRSEQ:
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
 if backend == Backend.FAIRSEQ:
-		translateCmd = "CUDA_VISIBLE_DEVICES={} fairseq-interactive".format(config["gpuId"].replace(" ",","))
+		translateCmd = "CUDA_VISIBLE_DEVICES={} fairseq-interactive {}".format(config["gpuId"].replace(" ",","), translateArgs)
 bleuCmd = moses + "/scripts/generic/multi-bleu-detok.perl"
 chrfCmd = "python3 "+tools + "/chrF/chrF++.py"
 
