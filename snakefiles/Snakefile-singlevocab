@@ -7,8 +7,8 @@ class Backend(Enum):
 
 
 backend=Backend.MARIAN
-if "backend" in config:
-		if "fairseq" == config["backend"]:
+if "fairseq" in config:
+		if config["fairseq"]:
 				backend=Backend.FAIRSEQ
 
 #Output dirs
@@ -93,6 +93,7 @@ detokenizer = moses + "/scripts/tokenizer/detokenizer.perl -l " + LANG2
 sentenceSplitter1 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG1
 sentenceSplitter2 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG2
 
+marianModelFile="model.npz.best-translation.npz.decoder.yml"
 trainArgs=""
 if "marianArgs" in config:
 		trainArgs=config["marianArgs"]
@@ -103,7 +104,7 @@ if "trainArgs" in config:
 if backend == Backend.MARIAN:
 		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(config["trainArgs"]) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
 if backend == Backend.FAIRSEQ:
-		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train".format(config["gpuId"].replace(" ",",")) + " ".join(config["trainArgs"])
+		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(config["gpuId"].replace(" ",",")) + " ".join(config["trainArgs"])
 
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
@@ -173,28 +174,30 @@ rule translate_only:
 ##########################################  RUNNING MT ENGINE ##########################################
 
 
-rule translate_test:
-    input:
-        modelPrevious="{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
-        ,
-        test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test)
-    output:
-        evalDir+"/{name}.output"
-    params:
-        model="{dir}/marian/{modelFile}".format(dir=modelDir, modelFile=config["marianModelFile"])
+if backend == Backend.MARIAN:
+    rule translate_test:
+        input:
+            modelPrevious="{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
+            ,
+            test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test)
+        output:
+            evalDir+"/{name}.output"
+        params:
+            model="{dir}/marian/{modelFile}".format(dir=modelDir, modelFile=marianModelFile)
 
-    shell:
-        "{translateCmd} -i {input.test} -c {params.model} > {output}"
+        shell:
+            "{translateCmd} -i {input.test} -c {params.model} > {output}"
 
-rule translate_test_fairseq:
-		input:
-				model="{dir}/checkpoints/checkpoint_best_metric.pt".format(modelDir),
-				test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test),
-				databin=modelDir+"/data-bin"
-		output:
-				evalDir+"/{name}.output"
-		shell:
-				"{translateCmd} --input {input.test} --path {input.model} {input.databin} | grep '^H-' | cut -f 3   > {output}"
+if backend == Backend.FAIRSEQ:
+    rule translate_test_fairseq:
+        input:
+             model="{}/checkpoints/checkpoint_best_metric.pt".format(modelDir),
+             test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test),
+             databin=modelDir+"/data-bin"
+        output:
+             evalDir+"/{name}.output"
+        shell:
+             "{translateCmd} --input {input.test} --path {input.model} {input.databin} | grep '^H-' | cut -f 3   > {output}"
 
 rule train_nmt:
     input:
@@ -245,13 +248,13 @@ rule make_vocab_yml_from_external:
         "cat {input} > {output}"
 
 rule make_databin_fairseq:
-		input:
-				expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
-				expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
-		output:
-				modelDir+"/data-bin"
-		shell:
-				"fairseq-preprocess -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 "
+   input:
+        train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs),
+        dev=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
+   output:
+        modelDir+"/data-bin"
+   shell:
+        "fairseq-preprocess --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 "
 
 ####################################################### TRUECASE ###########################################################
 
