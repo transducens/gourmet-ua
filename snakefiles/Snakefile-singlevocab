@@ -100,16 +100,18 @@ if "marianArgs" in config:
 if "trainArgs" in config:
 		trainArgs=config["trainArgs"]
 
+gpuIdCuda=config["gpuId"].replace(" ",",")
+
 #NMT commands
 if backend == Backend.MARIAN:
 		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(config["trainArgs"]) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
 if backend == Backend.FAIRSEQ:
-		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(config["gpuId"].replace(" ",",")) + " ".join(config["trainArgs"])
+		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(config["trainArgs"])
 
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
 if backend == Backend.FAIRSEQ:
-		translateCmd = "CUDA_VISIBLE_DEVICES={} fairseq-interactive".format(config["gpuId"].replace(" ",","))
+		translateCmd = "CUDA_VISIBLE_DEVICES={} fairseq-interactive".format(gpuIdCuda)
 bleuCmd = moses + "/scripts/generic/multi-bleu-detok.perl"
 chrfCmd = "python3 "+tools + "/chrF/chrF++.py"
 
@@ -225,7 +227,7 @@ rule choose_best_checkpoint:
 		output:
 				"{dir}/checkpoints/checkpoint_best_metric.pt".format(dir=modelDir)
 		shell:
-				"cp {input} {output}"  #TODO: change me later
+				"bash {tools}/scripts/select-best-checkpoint-fairseq.sh \"{dir}/checkpoints\" \"{corpusDir}/dev.bpe.{LANG1}\" \"{modelDir}/data-bin"\" \"{validateScript}\" \"{translateArgs}\" \"{gpuIdCuda}\""
 
 ################################################## MARIAN VOCAB ################################################################
 
