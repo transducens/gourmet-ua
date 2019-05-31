@@ -1,4 +1,15 @@
 from os.path import join
+from enum import Enum
+
+class Backend(Enum):
+	MARIAN=0
+	FAIRSEQ=1
+
+
+backend=Backend.MARIAN
+if "backend" in config:
+		if "fairseq" == config["backend"]:
+				backend=Backend.FAIRSEQ
 
 #Output dirs
 permanentDir = config["permanentDir"]
@@ -82,11 +93,22 @@ detokenizer = moses + "/scripts/tokenizer/detokenizer.perl -l " + LANG2
 sentenceSplitter1 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG1
 sentenceSplitter2 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG2
 
+trainArgs=""
+if "marianArgs" in config:
+		trainArgs=config["marianArgs"]
+if "trainArgs" in config:
+		trainArgs=config["trainArgs"]
+
 #NMT commands
-trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(config["marianArgs"]) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
+if backend == Backend.MARIAN:
+		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(config["trainArgs"]) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
+if backend == Backend.FAIRSEQ:
+		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train".format(config["gpuId"].replace(" ",",")) + " ".join(config["trainArgs"])
 
-translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
-
+if backend == Backend.MARIAN:
+		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
+if backend == Backend.FAIRSEQ:
+		translateCmd = "CUDA_VISIBLE_DEVICES={} fairseq-interactive".format(config["gpuId"].replace(" ",","))
 bleuCmd = moses + "/scripts/generic/multi-bleu-detok.perl"
 chrfCmd = "python3 "+tools + "/chrF/chrF++.py"
 
@@ -164,6 +186,16 @@ rule translate_test:
     shell:
         "{translateCmd} -i {input.test} -c {params.model} > {output}"
 
+rule translate_test_fairseq:
+		input:
+				model="{dir}/checkpoints/checkpoint_best_metric.pt".format(modelDir),
+				test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test),
+				databin=modelDir+"/data-bin"
+		output:
+				evalDir+"/{name}.output"
+		shell:
+				"{translateCmd} --input {input.test} --path {input.model} {input.databin} | grep '^H-' | cut -f 3   > {output}"
+
 rule train_nmt:
     input:
         vocab=modelDir+"/vocab."+LANG1+LANG2+".yml",
@@ -175,6 +207,22 @@ rule train_nmt:
         additionalVocab= lambda wildcards,input:  input.vocab if ssuffix else ""
     shell:
         "mkdir -p {modelDir}/marian ;{trainCmd} -t {input.train} --valid-sets {input.valid} --vocabs {input.vocab} {input.vocab} {params.additionalVocab} -m {modelDir}/marian/model.npz"
+
+rule train_nmt_fairseq:
+		input:
+				databin=modelDir+"/data-bin"
+		output:
+				"{dir}/checkpoints/checkpoint_best.pt".format(dir=modelDir)
+		shell:
+				"{trainCmd} --save-dir {modelDir}/checkpoints {input.databin}"
+
+rule choose_best_checkpoint:
+		input:
+				"{dir}/checkpoints/checkpoint_best.pt".format(dir=modelDir)
+		output:
+				"{dir}/checkpoints/checkpoint_best_metric.pt".format(dir=modelDir)
+		shell:
+				"cp {input} {output}"  #TODO: change me later
 
 ################################################## MARIAN VOCAB ################################################################
 
@@ -195,6 +243,15 @@ rule make_vocab_yml_from_external:
         modelDir+"/vocab.{lang1}{lang2}.yml".format(lang1=LANG1,lang2=LANG2)
     shell:
         "cat {input} > {output}"
+
+rule make_databin_fairseq:
+		input:
+				expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
+				expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
+		output:
+				modelDir+"/data-bin"
+		shell:
+				"fairseq-preprocess -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 "
 
 ####################################################### TRUECASE ###########################################################
 
