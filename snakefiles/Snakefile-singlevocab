@@ -109,9 +109,9 @@ if "translateArgs" in config:
 
 #NMT commands
 if backend == Backend.MARIAN:
-		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(config["trainArgs"]) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
+		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(trainArgs) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
 if backend == Backend.FAIRSEQ:
-		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(config["trainArgs"])
+		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs)
 
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
