@@ -52,7 +52,8 @@ def main(args):
             for l in in_f:
                 l=l.rstrip("\n")
                 toks=l.split()
-                out_f.write(" ".join([  t for t in toks if not t.startswith("interleaved_")]))
+                outstr=" ".join([  t for t in toks if not t.startswith("interleaved_")])
+                out_f.write(outstr)
                 out_f.write("\n")
 
     def build_dictionary(filenames, src=False, tgt=False):
@@ -60,7 +61,7 @@ def main(args):
 
         in_filenames=filenames
         temp_filenames=None
-        if args.additional_decoder_tl and tgt:
+        if args.additional_decoder_tl:
             temp_filenames=set()
             for fn in filenames:
                 tmpf=tempfile.NamedTemporaryFile(delete=False)
@@ -70,8 +71,9 @@ def main(args):
                 temp_filenames.add(tmpfn)
             in_filenames=temp_filenames
 
+        print("Building dictionaries from {}".format(in_filenames))
         rvalue= task.build_dictionary(
-            filenames,
+            in_filenames,
             workers=args.workers,
             threshold=args.thresholdsrc if src else args.thresholdtgt,
             nwords=args.nwordssrc if src else args.nwordstgt,
