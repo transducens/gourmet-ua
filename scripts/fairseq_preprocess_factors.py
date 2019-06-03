@@ -257,18 +257,18 @@ def main(args):
             make_dataset(vocab, args.trainpref, "train{}".format(prefsuf), lang, num_workers=args.workers)
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
-                outprefix = "valid{}{}".format(k,prefsuf) if k > 0 else "valid"
+                outprefix = "valid{}{}".format(k,prefsuf) if k > 0 else "valid{}".format(prefsuf)
                 make_dataset(vocab, validpref, outprefix, lang, num_workers=args.workers)
         if args.testpref:
             for k, testpref in enumerate(args.testpref.split(",")):
-                outprefix = "test{}{}".format(k,prefsuf) if k > 0 else "test"
+                outprefix = "test{}{}".format(k,prefsuf) if k > 0 else "test{}".format(prefsuf)
                 make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
 
     make_all(args.source_lang, src_dict)
     if target:
         make_all(args.target_lang, tgt_dict)
         if args.additional_decoder_tl:
-            make_all(args.target_lang, tgt_dict, factors=True)
+            make_all(args.target_lang, tgt_factors_dict, factors=True)
 
     print("| Wrote preprocessed data to {}".format(args.destdir))
 
