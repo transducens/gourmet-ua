@@ -56,7 +56,29 @@ def main(args):
                 out_f.write(outstr)
                 out_f.write("\n")
 
-    def build_dictionary(filenames, src=False, tgt=False):
+    def retain_interleaving_tags(infile,outfile):
+        NOEOW="@@"
+        with open(infile) as in_f, open(outfile,"w") as out_f:
+            for l in in_f:
+                l=l.rstrip("\n")
+                toks=l.split()
+                words=[  t for t in toks if not t.startswith("interleaved_")]
+                tags=[  t for t in toks if t.startswith("interleaved_")]
+                o=[]
+                tagp=0
+                for w in words:
+                    if not w.endswith(NOEOW):
+                        #This is the end of a word
+                        o.append(tags[tagp])
+                        tagp+=1
+                    else:
+                        #This is not
+                        o.append(tags[tagp]+NOEOW)
+                outstr=" ".join(o)
+                out_f.write(outstr)
+                out_f.write("\n")
+
+    def build_dictionary(filenames, src=False, tgt=False, factors=False):
         assert src ^ tgt
 
         in_filenames=filenames
@@ -67,7 +89,10 @@ def main(args):
                 tmpf=tempfile.NamedTemporaryFile(delete=False)
                 tmpfn=tmpf.name
                 tmpf.close()
-                remove_interleaving_tags(fn,tmpfn)
+                if factors == True:
+                    retain_interleaving_tags(fn,tmpfn)
+                else:
+                    remove_interleaving_tags(fn,tmpfn)
                 temp_filenames.add(tmpfn)
             in_filenames=temp_filenames
 
@@ -125,6 +150,11 @@ def main(args):
     src_dict.save(dict_path(args.source_lang))
     if target and tgt_dict is not None:
         tgt_dict.save(dict_path(args.target_lang))
+
+    #If we are using a second decoder, we need an independent dictionary
+    if args.additional_decoder_tl:
+        tgt_factors_dict= build_dictionary([train_path(args.target_lang)], tgt=True,factors=True)
+        tgt_factors_dict.save(dict_path(args.target_lang+"factors"))
 
 
     def make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers):
