@@ -47,15 +47,43 @@ def main(args):
     def dict_path(lang):
         return dest_path("dict", lang) + ".txt"
 
+    def remove_interleaving_tags(infile,outfile):
+        with open(infile) as in_f, open(outfile,"w") as out_f:
+            for l in in_f:
+                l=l.rstrip("\n")
+                toks=l.split()
+                out_f.write(" ".join([  t for t in toks if not t.startswith("interleaved_")]))
+                out_f.write("\n")
+
     def build_dictionary(filenames, src=False, tgt=False):
         assert src ^ tgt
-        return task.build_dictionary(
+
+        in_filenames=filenames
+        temp_filenames=None
+        if args.additional_decoder_tl and tgt:
+            temp_filenames=set()
+            for fn in filenames:
+                tmpf=tempfile.NamedTemporaryFile(delete=False)
+                tmpfn=tmpf.name
+                tmpf.close()
+                remove_interleaving_tags(fn,tmpfn)
+                temp_filenames.add(tmpfn)
+            in_filenames=temp_filenames
+
+        rvalue= task.build_dictionary(
             filenames,
             workers=args.workers,
             threshold=args.thresholdsrc if src else args.thresholdtgt,
             nwords=args.nwordssrc if src else args.nwordstgt,
             padding_factor=args.padding_factor,
         )
+
+        if temp_filenames != None:
+            for fn in temp_filenames:
+                os.remove(fn)
+
+        return rvalue
+
 
     if not args.srcdict and os.path.exists(dict_path(args.source_lang)):
         raise FileExistsError(dict_path(args.source_lang))
@@ -96,13 +124,6 @@ def main(args):
     if target and tgt_dict is not None:
         tgt_dict.save(dict_path(args.target_lang))
 
-    def remove_interleaving_tags(infile,outfile):
-        with open(infile) as in_f, open(outfile,"w") as out_f:
-            for l in in_f:
-                l=l.rstrip("\n")
-                toks=l.split()
-                out_f.write(" ".join([  t for t in toks if not t.startswith("interleaved_")]))
-                out_f.write("\n")
 
     def make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers):
         print("| [{}] Dictionary: {} types".format(lang, len(vocab) - 1))
