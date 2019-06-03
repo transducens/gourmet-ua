@@ -173,13 +173,15 @@ def main(args):
 
         input_temp_file=None
         if args.additional_decoder_tl:
+            input_temp_file_obj=tempfile.NamedTemporaryFile(delete=False)
+            input_temp_file_obj.close()
+            input_temp_file=input_temp_file_obj.name
             if not output_prefix.endswith("factors"):
-                #remove interleaving tags before creating vocabulary
-                input_temp_file_obj=tempfile.NamedTemporaryFile(delete=False)
-                input_temp_file_obj.close()
-                input_temp_file=input_temp_file_obj.name
                 remove_interleaving_tags(input_file,input_temp_file)
-                input_file=input_temp_file
+            else:
+                retain_interleaving_tags(input_file,input_temp_file)
+            input_file=input_temp_file
+
 
         offsets = Binarizer.find_offsets(input_file, num_workers)
         pool = None
@@ -247,21 +249,26 @@ def main(args):
             )
             shutil.copyfile(file_name(input_prefix, lang), output_text_file)
 
-    def make_all(lang, vocab):
+    def make_all(lang, vocab, factors=False):
+        prefsuf=""
+        if factors:
+            prefsuf="factors"
         if args.trainpref:
-            make_dataset(vocab, args.trainpref, "train", lang, num_workers=args.workers)
+            make_dataset(vocab, args.trainpref, "train{}".format(prefsuf), lang, num_workers=args.workers)
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
-                outprefix = "valid{}".format(k) if k > 0 else "valid"
+                outprefix = "valid{}{}".format(k,prefsuf) if k > 0 else "valid"
                 make_dataset(vocab, validpref, outprefix, lang, num_workers=args.workers)
         if args.testpref:
             for k, testpref in enumerate(args.testpref.split(",")):
-                outprefix = "test{}".format(k) if k > 0 else "test"
+                outprefix = "test{}{}".format(k,prefsuf) if k > 0 else "test"
                 make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
 
     make_all(args.source_lang, src_dict)
     if target:
         make_all(args.target_lang, tgt_dict)
+        if args.additional_decoder_tl:
+            make_all(args.target_lang, tgt_dict, factors=True)
 
     print("| Wrote preprocessed data to {}".format(args.destdir))
 
