@@ -12,18 +12,18 @@ Data pre-processing: build vocabularies and binarize training data.
 from collections import Counter
 from itertools import zip_longest
 
-from fairseq import options, tasks, utils
+from fairseq import options, tasks
 from fairseq.data import indexed_dataset
 from fairseq.binarizer import Binarizer
+from fairseq.utils import import_user_module
 from multiprocessing import Pool
 
 import os
 import shutil
 import tempfile
 
-
 def main(args):
-    utils.import_user_module(args)
+    import_user_module(args)
 
     print(args)
 
@@ -128,7 +128,6 @@ def main(args):
                 remove_interleaving_tags(input_file,input_temp_file)
                 input_file=input_temp_file
 
-
         offsets = Binarizer.find_offsets(input_file, num_workers)
         pool = None
         if num_workers > 1:
@@ -150,7 +149,9 @@ def main(args):
                 )
             pool.close()
 
-        ds = indexed_dataset.make_builder(dataset_dest_file(args, output_prefix, lang, "bin"), impl=args.dataset_impl)
+        ds = indexed_dataset.IndexedDatasetBuilder(
+            dataset_dest_file(args, output_prefix, lang, "bin")
+        )
         merge_result(
             Binarizer.binarize(
                 input_file, vocab, lambda t: ds.add_item(t),
@@ -183,15 +184,15 @@ def main(args):
             os.remove(input_temp_file)
 
     def make_dataset(vocab, input_prefix, output_prefix, lang, num_workers=1):
-        if args.dataset_impl == "raw":
+        if args.output_format == "binary":
+            make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers)
+        elif args.output_format == "raw":
             # Copy original text file to destination folder
             output_text_file = dest_path(
                 output_prefix + ".{}-{}".format(args.source_lang, args.target_lang),
                 lang,
             )
             shutil.copyfile(file_name(input_prefix, lang), output_text_file)
-        else:
-            make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers)
 
     def make_all(lang, vocab):
         if args.trainpref:
@@ -255,7 +256,9 @@ def main(args):
 
 
 def binarize(args, filename, vocab, output_prefix, lang, offset, end, append_eos=True):
-    ds = indexed_dataset.make_builder(dataset_dest_file(args, output_prefix, lang, "bin"), impl=args.dataset_impl)
+    ds = indexed_dataset.IndexedDatasetBuilder(
+        dataset_dest_file(args, output_prefix, lang, "bin")
+    )
 
     def consumer(tensor):
         ds.add_item(tensor)
@@ -283,12 +286,19 @@ def get_offsets(input_file, num_workers):
     return Binarizer.find_offsets(input_file, num_workers)
 
 
+def merge_files(files, outpath):
+    ds = indexed_dataset.IndexedDatasetBuilder("{}.bin".format(outpath))
+    for file in files:
+        ds.merge_file_(file)
+        os.remove(indexed_dataset.data_file_path(file))
+        os.remove(indexed_dataset.index_file_path(file))
+    ds.finalize("{}.idx".format(outpath))
+
+
 def cli_main():
     parser = options.get_preprocessing_parser()
-
     #Custom options
     parser.add_argument('--additional_decoder_tl', action='store_true',help='Add an additional decoder instead of interleaving')
-
     args = parser.parse_args()
     main(args)
 
