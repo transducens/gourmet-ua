@@ -120,7 +120,7 @@ def main(args):
 
         input_temp_file=None
         if args.additional_decoder_tl:
-            if not outprefix.endswith("factors"):
+            if not output_prefix.endswith("factors"):
                 #remove interleaving tags before creating vocabulary
                 input_temp_file_obj=tempfile.NamedTemporaryFile(delete=False)
                 input_temp_file_obj.close()
