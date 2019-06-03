@@ -33,7 +33,7 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
                 minloss=min(self.checkpoint_losses)
                 if all( l > minloss for l in  self.checkpoint_losses[-self.patience:]  ):
                     print("Early stop")
-                    sys.exit()
+                    sys.exit(0)
                     
             self.valid_loss_meter.reset()
 
