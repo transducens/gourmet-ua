@@ -1,4 +1,14 @@
-import fairseq.data.LanguagePairDataset
+import fairseq.data
+
+from fairseq.data import data_utils, FairseqDataset
+
+
+#import utils
+from fairseq import utils
+
+
+import numpy as np
+import torch
 
 def collate(
     samples, pad_idx, eos_idx, left_pad_source=True, left_pad_target=False,
@@ -164,7 +174,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
 
     @property
     def supports_prefetch(self):
-        return super().supports_prefetch() and getattr(self.tgt_factors, 'supports_prefetch', False)
+        return super().supports_prefetch and getattr(self.tgt_factors, 'supports_prefetch', False)
 
     def prefetch(self, indices):
         super().prefetch()

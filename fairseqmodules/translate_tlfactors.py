@@ -1,7 +1,16 @@
-import sys
+import sys,os,itertools
 
 from fairseq.tasks import register_task
 from fairseq.meters import AverageMeter
+from fairseq.data import (
+    ConcatDataset,
+    data_utils,
+    Dictionary,
+    IndexedCachedDataset,
+    IndexedDataset,
+    IndexedRawTextDataset,
+    LanguagePairDataset,
+)
 
 from . import translate_early
 from . import language_pair_tl_factors_dataset
@@ -33,8 +42,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         self.tgt_factors_dict=tgt_factors_dict
 
     @classmethod
-    def setup_task(cls, args, **kwargs):
-        parent_task= super(TranslationTLFactorsTask, cls).setup_task(args,kwargs)
+    def setup_task(cls, args):
+        parent_task= translate_early.TranslationEarlyStopTask.setup_task(args)
         tgt_factors_dict = cls.load_dictionary(os.path.join(args.data[0], 'dict.{}factors.txt'.format(args.target_lang)))
         return  cls(args, parent_task.src_dict, parent_task.tgt_dict, tgt_factors_dict)
 
@@ -76,8 +85,10 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 src, tgt = self.args.source_lang, self.args.target_lang
                 if split_exists(split_k, src, tgt, src, data_path):
                     prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, src, tgt))
+                    prefix_factors=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factors", src, tgt))
                 elif split_exists(split_k, tgt, src, src, data_path):
                     prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, tgt, src))
+                    prefix_factors = os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factors", tgt, src))
                 else:
                     if k > 0 or dk > 0:
                         break
@@ -86,7 +97,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
 
                 src_datasets.append(indexed_dataset(prefix + src, self.src_dict))
                 tgt_datasets.append(indexed_dataset(prefix + tgt, self.tgt_dict))
-                tgt_factors_datasets.append(indexed_dataset(prefix + tgt + "factors", self.tgt_factors_dict))
+                tgt_factors_datasets.append(indexed_dataset(prefix_factors + tgt , self.tgt_factors_dict))
 
                 print('| {} {} {} examples'.format(data_path, split_k, len(src_datasets[-1])))
 
@@ -114,7 +125,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             max_target_positions=self.args.max_target_positions,
         )
 
-     @property
+    @property
     def target_factors_dictionary(self):
         """Return the target factors :class:`~fairseq.data.Dictionary`."""
         return self.tgt_factors_dict
