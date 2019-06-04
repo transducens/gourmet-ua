@@ -10,3 +10,4 @@ def lstm_wmt2017(args):
     args.max_target_positions= getattr(args, 'max_target_positions', 100)
 #    args.= getattr(args, '', )
 #    args.= getattr(args, '', )
+

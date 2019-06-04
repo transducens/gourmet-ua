@@ -8,22 +8,23 @@ from fairseq.models import (
     FairseqEncoder, FairseqIncrementalDecoder, BaseFairseqModel, register_model,
     register_model_architecture,
 )
-from fairseq.models.lstm import LSTMModel,LSTMEncoder,LSTMDecoder
+from fairseq.models.lstm import LSTMModel,LSTMEncoder,LSTMDecoder,base_architecture,Embedding,Linear,LSTMCell,AttentionLayer
 
 
 @register_model('lstm_two_decoders')
-class LSTMTwoDecodersModel(BaseFairseqModel):
+class LSTMTwoDecodersModel(LSTMModel):
     """
     add_args is completely inherited
     """
     def __init__(self, encoder, decoder, decoder_b):
-        super().__init__()
+        BaseFairseqModel.__init__(self)
         self.encoder = encoder
         self.decoder = decoder
         self.decoder_b = decoder_b
         assert isinstance(self.encoder, FairseqEncoder)
-        assert isinstance(self.decoder, FairseqDecoderTwoInputs)
-        assert isinstance(self.decoder_b, FairseqDecoderTwoInputs)
+        assert isinstance(self.decoder, LSTMDecoderTwoInputs)
+        assert isinstance(self.decoder_b, LSTMDecoderTwoInputs)
+    
 
     @classmethod
     def build_model(cls, args, task):
@@ -137,7 +138,7 @@ class LSTMTwoDecodersModel(BaseFairseqModel):
         )
         return cls(encoder, decoder, decoder_b)
 
-     def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors):
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors):
         """
         Run the forward pass for an encoder-decoder model.
         First feed a batch of source tokens through the encoder. Then, feed the
@@ -157,7 +158,7 @@ class LSTMTwoDecodersModel(BaseFairseqModel):
         encoder_out = self.encoder(src_tokens, src_lengths)
         decoder_out = self.decoder(prev_output_tokens,prev_output_factors, encoder_out)
         decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_out)
-        return decoder_out,{"decoder_b_out": decoder_b_out}
+        return decoder_out#,{"decoder_b_out": decoder_b_out}
 
 class LSTMDecoderTwoInputs(LSTMDecoder):
     def __init__(
@@ -171,7 +172,7 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
         """
         #super().__init__(dictionary)
         #It seems the dictionary argument is not used by FairseqIncrementalDecoder
-        FairseqIncrementalDecoder.__init__(dictionary)
+        FairseqIncrementalDecoder.__init__(self,dictionary)
 
         self.dropout_in = dropout_in
         self.dropout_out = dropout_out
@@ -321,3 +322,7 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
             else:
                 x = self.fc_out(x)
         return x, attn_scores
+
+@register_model_architecture('lstm_two_decoders', 'lstm_two_decoders')
+def lstm_two_decoders(args):
+        pass
