@@ -101,7 +101,7 @@ if "trainArgs" in config:
 		trainArgs=config["trainArgs"]
 
 
-gpuIdCuda=config["gpuId"].replace(" ",",")
+gpuIdCuda=config["gpuId"].replace(" ",",") if isinstance(config["gpuId"], str) else str(config["gpuId"]).replace(" ",",")
 translateArgs=""
 if "translateArgs" in config:
 	translateArgs=config["translateArgs"]
