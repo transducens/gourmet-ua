@@ -1,6 +1,8 @@
 from fairseq.criterions import register_criterion
 from fairseq.criterions.label_smoothed_cross_entropy import LabelSmoothedCrossEntropyCriterion
 
+from fairseq import utils
+
 @register_criterion('label_smoothed_cross_entropy_two_decoders')
 class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCriterion):
     def forward(self, model, sample, reduce=True):
@@ -11,6 +13,7 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         3) logging outputs to display while training
         """
         net_output,net_output_b = model(**sample['net_input'])
+
         loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
         loss_b, nll_loss_b = self.compute_loss_factors(model, net_output_b, sample, reduce=reduce)
 
@@ -36,7 +39,7 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         lprobs = model.get_normalized_probs(net_output, log_probs=True)
         lprobs = lprobs.view(-1, lprobs.size(-1))
         target_factors = model.get_target_factors(sample, net_output).view(-1, 1)
-        non_pad_mask = target.ne(self.padding_idx)
+        non_pad_mask = target_factors.ne(self.padding_idx)
         nll_loss = -lprobs.gather(dim=-1, index=target_factors)[non_pad_mask]
         smooth_loss = -lprobs.sum(dim=-1, keepdim=True)[non_pad_mask]
         if reduce:
