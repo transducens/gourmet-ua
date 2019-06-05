@@ -36,10 +36,11 @@ def collate(
     if samples[0].get('target', None) is not None:
         target = merge('target', left_pad=left_pad_target)
         target = target.index_select(0, sort_order)
-        ntokens = sum(len(s['target']) for s in samples)
 
         target_factors=merge('target_factors', left_pad=left_pad_target)
         target_factors = target_factors.index_select(0, sort_order)
+
+        ntokens = sum(len(s['target']) for s in samples)+sum(len(s['target_factors']) for s in samples)
 
         if input_feeding:
             # we create a shifted version of targets for feeding the

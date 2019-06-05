@@ -24,7 +24,7 @@ class LSTMTwoDecodersModel(LSTMModel):
         assert isinstance(self.encoder, FairseqEncoder)
         assert isinstance(self.decoder, LSTMDecoderTwoInputs)
         assert isinstance(self.decoder_b, LSTMDecoderTwoInputs)
-    
+
 
     @classmethod
     def build_model(cls, args, task):
@@ -138,6 +138,10 @@ class LSTMTwoDecodersModel(LSTMModel):
         )
         return cls(encoder, decoder, decoder_b)
 
+    def get_target_factors(self, sample, net_output):
+        """Get targets from either the sample or the net's output."""
+        return sample['target_factors']
+
     def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors):
         """
         Run the forward pass for an encoder-decoder model.
@@ -158,7 +162,7 @@ class LSTMTwoDecodersModel(LSTMModel):
         encoder_out = self.encoder(src_tokens, src_lengths)
         decoder_out = self.decoder(prev_output_tokens,prev_output_factors, encoder_out)
         decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_out)
-        return decoder_out #,{"decoder_b_out": decoder_b_out}
+        return decoder_out ,decoder_b_out
 
 class LSTMDecoderTwoInputs(LSTMDecoder):
     def __init__(
