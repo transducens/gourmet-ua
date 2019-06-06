@@ -142,7 +142,7 @@ class LSTMTwoDecodersModel(LSTMModel):
         """Get targets from either the sample or the net's output."""
         return sample['target_factors']
 
-    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors):
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors):
         """
         Run the forward pass for an encoder-decoder model.
         First feed a batch of source tokens through the encoder. Then, feed the
@@ -160,7 +160,7 @@ class LSTMTwoDecodersModel(LSTMModel):
             the decoder's output, typically of shape `(batch, tgt_len, vocab)`
         """
         encoder_out = self.encoder(src_tokens, src_lengths)
-        decoder_out = self.decoder(prev_output_tokens,prev_output_factors, encoder_out)
+        decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
         decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_out)
         return decoder_out, decoder_b_out
 

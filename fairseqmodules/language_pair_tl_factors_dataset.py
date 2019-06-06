@@ -32,6 +32,8 @@ def collate(
     src_tokens = src_tokens.index_select(0, sort_order)
 
     prev_output_tokens = None
+    prev_output_factors =None
+    cur_output_factors =None
     target = None
     if samples[0].get('target', None) is not None:
         target = merge('target', left_pad=left_pad_target)
@@ -57,6 +59,7 @@ def collate(
                 left_pad=left_pad_target,
                 move_eos_to_beginning=True,
             )
+            cur_output_factors=prev_output_factors
             prev_output_factors = prev_output_factors.index_select(0, sort_order)
     else:
         ntokens = sum(len(s['source']) for s in samples)
@@ -76,6 +79,8 @@ def collate(
         batch['net_input']['prev_output_tokens'] = prev_output_tokens
     if prev_output_factors is not None:
         batch['net_input']['prev_output_factors'] = prev_output_factors
+    if cur_output_factors is not None:
+        batch['net_input']['cur_output_factors'] = cur_output_factors
     return batch
 
 class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
