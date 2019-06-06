@@ -135,7 +135,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             return two_decoder_sequence_generator.TwoDecoderSequenceGenerator(
                 self.target_dictionary,
                 self.target_factors_dictionary,
-                beam_size=args.beam,
+		beam_size=args.beam,
                 max_len_a=args.max_len_a,
                 max_len_b=args.max_len_b,
                 min_len=args.min_len,
@@ -145,7 +145,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 unk_penalty=args.unkpen,
                 sampling=args.sampling,
                 sampling_topk=args.sampling_topk,
-                temperature=args.temperature,
+                sampling_temperature=args.sampling_temperature,
                 diverse_beam_groups=args.diverse_beam_groups,
                 diverse_beam_strength=args.diverse_beam_strength,
                 match_source_len=args.match_source_len,

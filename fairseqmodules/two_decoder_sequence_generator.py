@@ -611,13 +611,13 @@ class EnsembleModel(torch.nn.Module):
         if is_decoder_b_step:
             dec = model.decoder_b
             #Factors decoder input: factors, surface forms
-            tokens_in_a=torch.index_select(tokens, -1, torch.tensor(  [i for i in range(0,tokens.size(-1),2) ] ) )
-            tokens_in_b=torch.index_select(tokens, -1, torch.tensor(  [i for i in range(1,tokens.size(-1),2) ] ))
+            tokens_in_a=torch.index_select(tokens, -1, torch.tensor(  [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device) )
+            tokens_in_b=torch.index_select(tokens, -1, torch.tensor(  [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
         else:
             dec = model.decoder
             #surface forms decoder input: surface forms, factors
-            tokens_in_a=torch.index_select(tokens, -1, torch.tensor( [i for i in range(1,tokens.size(-1),2) ] ))
-            tokens_in_b=torch.index_select(tokens, -1, torch.tensor( [i for i in range(0,tokens.size(-1),2) ] ))
+            tokens_in_a=torch.index_select(tokens, -1, torch.tensor( [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
+            tokens_in_b=torch.index_select(tokens, -1, torch.tensor( [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device))
         if self.incremental_states is not None:
             decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states[model]))
         else:
