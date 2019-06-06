@@ -45,6 +45,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
     def setup_task(cls, args):
         parent_task= translate_early.TranslationEarlyStopTask.setup_task(args)
         tgt_factors_dict = cls.load_dictionary(os.path.join(args.data[0], 'dict.{}factors.txt'.format(args.target_lang)))
+        print('| [{}] dictionary: {} types'.format(args.target_lang+"factors", len(tgt_factors_dict)))
         return  cls(args, parent_task.src_dict, parent_task.tgt_dict, tgt_factors_dict)
 
     def load_dataset(self, split, combine=False, **kwargs):
