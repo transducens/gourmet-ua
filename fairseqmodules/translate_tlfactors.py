@@ -125,6 +125,33 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             max_target_positions=self.args.max_target_positions,
         )
 
+    def build_generator(self, args):
+        if args.score_reference:
+            raise NotImplementedError
+            from fairseq.sequence_scorer import SequenceScorer
+            return SequenceScorer(self.target_dictionary)
+        else:
+            from . import two_decoder_sequence_generator
+            return two_decoder_sequence_generator.TwoDecoderSequenceGenerator(
+                self.target_dictionary,
+                self.target_factors_dictionary,
+                beam_size=args.beam,
+                max_len_a=args.max_len_a,
+                max_len_b=args.max_len_b,
+                min_len=args.min_len,
+                stop_early=(not args.no_early_stop),
+                normalize_scores=(not args.unnormalized),
+                len_penalty=args.lenpen,
+                unk_penalty=args.unkpen,
+                sampling=args.sampling,
+                sampling_topk=args.sampling_topk,
+                temperature=args.temperature,
+                diverse_beam_groups=args.diverse_beam_groups,
+                diverse_beam_strength=args.diverse_beam_strength,
+                match_source_len=args.match_source_len,
+                no_repeat_ngram_size=args.no_repeat_ngram_size,
+            )
+
     @property
     def target_factors_dictionary(self):
         """Return the target factors :class:`~fairseq.data.Dictionary`."""

@@ -231,7 +231,7 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
 
         if incremental_state is not None:
-            #I don't what the the -1 and : mean
+            #Get only last token of each type
             prev_output_tokens = prev_output_tokens[:, -1:]
             prev_output_tokens_b = prev_output_tokens_b[:, -1:]
 
