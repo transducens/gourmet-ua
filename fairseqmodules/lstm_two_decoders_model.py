@@ -162,7 +162,7 @@ class LSTMTwoDecodersModel(LSTMModel):
         encoder_out = self.encoder(src_tokens, src_lengths)
         decoder_out = self.decoder(prev_output_tokens,prev_output_factors, encoder_out)
         decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_out)
-        return decoder_out ,decoder_b_out
+        return decoder_out, decoder_b_out
 
 class LSTMDecoderTwoInputs(LSTMDecoder):
     def __init__(
@@ -247,7 +247,7 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
 
         #embed additional tokens
         x_b=self.embed_tokens_b(prev_output_tokens_b)
-        x_b = F.dropout(x, p=self.dropout_in, training=self.training)
+        x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
 
         #Concatenate both
         x=torch.cat((x, x_b), dim=2)
