@@ -329,4 +329,6 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
 
 @register_model_architecture('lstm_two_decoders', 'lstm_two_decoders')
 def lstm_two_decoders(args):
-        pass
+    args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 1024)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 1024)
+    args.encoder_bidirectional= getattr(args, 'encoder_bidirectional', True)
