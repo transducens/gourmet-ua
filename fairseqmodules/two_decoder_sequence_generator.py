@@ -281,7 +281,7 @@ class TwoDecoderSequenceGenerator(object):
                     else:
                         hypo_attn = None
                         alignment = None
-                
+
                     #print("Finalizing hypothesis: {}".format(tokens_clone[i]))
                     return {
                         'tokens': tokens_clone[i][1::2],
@@ -573,8 +573,11 @@ class EnsembleModel(torch.nn.Module):
         super().__init__()
         self.models = torch.nn.ModuleList(models)
         self.incremental_states = None
+        self.incremental_states_b = None
         if all(isinstance(m.decoder, FairseqIncrementalDecoder) for m in models):
             self.incremental_states = {m: {} for m in models}
+        if all(isinstance(m.decoder_b, FairseqIncrementalDecoder) for m in models):
+            self.incremental_states_b = {m: {} for m in models}
 
     def has_encoder(self):
         return hasattr(self.models[0], 'encoder')
@@ -631,7 +634,7 @@ class EnsembleModel(torch.nn.Module):
         #print("tokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\n".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b))
 
         if self.incremental_states is not None:
-            decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states[model]))
+            decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
         else:
             decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out))
         decoder_out[0] = decoder_out[0][:, -1:, :]
@@ -659,3 +662,7 @@ class EnsembleModel(torch.nn.Module):
             return
         for model in self.models:
             model.decoder.reorder_incremental_state(self.incremental_states[model], new_order)
+
+        if self.incremental_states_b != None:
+            for model in self.models:
+                model.decoder_b.reorder_incremental_state(self.incremental_states_b[model], new_order)
