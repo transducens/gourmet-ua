@@ -327,7 +327,7 @@ class TwoDecoderSequenceGenerator(object):
                     corr = batch_idxs - torch.arange(batch_idxs.numel()).type_as(batch_idxs)
                     reorder_state.view(-1, beam_size).add_(corr.unsqueeze(-1) * beam_size)
                 model.reorder_incremental_state(reorder_state)
-                model.reorder_encoder_out(encoder_outs, reorder_state)
+                encoder_outs=model.reorder_encoder_out(encoder_outs, reorder_state)
 
             #CHANGE: call the appropriate decoder: step +1 -> step +2
             lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step)
@@ -517,22 +517,25 @@ class TwoDecoderSequenceGenerator(object):
             active_scores = active_scores.view(-1)
 
             # copy tokens and scores for active hypotheses
+            #CHANGE: +1 -> +2
             torch.index_select(
-                tokens[:, :step + 1], dim=0, index=active_bbsz_idx,
-                out=tokens_buf[:, :step + 1],
+                tokens[:, :step + 2], dim=0, index=active_bbsz_idx,
+                out=tokens_buf[:, :step + 2],
             )
+            #CHANGE: +1 -> +2
             torch.gather(
                 cand_indices, dim=1, index=active_hypos,
-                out=tokens_buf.view(bsz, beam_size, -1)[:, :, step + 1],
+                out=tokens_buf.view(bsz, beam_size, -1)[:, :, step + 2],
             )
             if step > 0:
                 torch.index_select(
                     scores[:, :step], dim=0, index=active_bbsz_idx,
                     out=scores_buf[:, :step],
                 )
+            #CHANGE: step -> step +1
             torch.gather(
                 cand_scores, dim=1, index=active_hypos,
-                out=scores_buf.view(bsz, beam_size, -1)[:, :, step],
+                out=scores_buf.view(bsz, beam_size, -1)[:, :, step+1],
             )
 
             # copy attention for active hypotheses
@@ -608,6 +611,7 @@ class EnsembleModel(torch.nn.Module):
         return avg_probs, avg_attn
 
     def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step):
+
         if is_decoder_b_step:
             dec = model.decoder_b
             #Factors decoder input: factors, surface forms
@@ -618,6 +622,9 @@ class EnsembleModel(torch.nn.Module):
             #surface forms decoder input: surface forms, factors
             tokens_in_a=torch.index_select(tokens, -1, torch.tensor( [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
             tokens_in_b=torch.index_select(tokens, -1, torch.tensor( [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device))
+
+        print("tokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\n".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b))
+
         if self.incremental_states is not None:
             decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states[model]))
         else:
