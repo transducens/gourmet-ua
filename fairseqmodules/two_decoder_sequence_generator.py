@@ -239,9 +239,10 @@ class TwoDecoderSequenceGenerator(object):
 
             # clone relevant token and attention tensors
             tokens_clone = tokens.index_select(0, bbsz_idx)
-            tokens_clone = tokens_clone[:, 1:step + 2]  # skip the first index, which is EOS
-            tokens_clone[:, step] = self.eos
-            attn_clone = attn.index_select(0, bbsz_idx)[:, :, 1:step+2] if attn is not None else None
+            #CHANGE: skip first two indexes
+            tokens_clone = tokens_clone[:, 2:step + 2]  # skip the first index, which is EOS
+            tokens_clone[:, step-1] = self.eos
+            attn_clone = attn.index_select(0, bbsz_idx)[:, :, 2:step+2] if attn is not None else None
 
             # compute scores per token position
             pos_scores = scores.index_select(0, bbsz_idx)[:, :step+1]
@@ -280,9 +281,12 @@ class TwoDecoderSequenceGenerator(object):
                     else:
                         hypo_attn = None
                         alignment = None
-
+                
+                    #print("Finalizing hypothesis: {}".format(tokens_clone[i]))
                     return {
-                        'tokens': tokens_clone[i],
+                        'tokens': tokens_clone[i][1::2],
+                        'tags': tokens_clone[i][0::2],
+                        'raw_tokens': tokens_clone[i],
                         'score': score,
                         'attention': hypo_attn,  # src_len x tgt_len
                         'alignment': alignment,
@@ -454,7 +458,7 @@ class TwoDecoderSequenceGenerator(object):
             assert num_remaining_sent >= 0
             if num_remaining_sent == 0:
                 break
-            assert step < max_len
+            assert step < max_len*2
 
             if len(finalized_sents) > 0:
                 new_bsz = bsz - len(finalized_sents)
@@ -558,6 +562,7 @@ class TwoDecoderSequenceGenerator(object):
         for sent in range(len(finalized)):
             finalized[sent] = sorted(finalized[sent], key=lambda r: r['score'], reverse=True)
 
+        #Remove linguistic factors before returning
         return finalized
 
 
@@ -623,7 +628,7 @@ class EnsembleModel(torch.nn.Module):
             tokens_in_a=torch.index_select(tokens, -1, torch.tensor( [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
             tokens_in_b=torch.index_select(tokens, -1, torch.tensor( [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device))
 
-        print("tokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\n".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b))
+        #print("tokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\n".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b))
 
         if self.incremental_states is not None:
             decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states[model]))
