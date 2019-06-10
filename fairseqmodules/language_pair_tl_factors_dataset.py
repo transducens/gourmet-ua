@@ -59,8 +59,14 @@ def collate(
                 left_pad=left_pad_target,
                 move_eos_to_beginning=True,
             )
-            cur_output_factors=prev_output_factors
             prev_output_factors = prev_output_factors.index_select(0, sort_order)
+
+            cur_output_factors = merge(
+                 'target_factors',
+                 left_pad=left_pad_target,
+                 move_eos_to_beginning=False,
+             )
+            cur_output_factors = cur_output_factors.index_select(0, sort_order)
     else:
         ntokens = sum(len(s['source']) for s in samples)
 
