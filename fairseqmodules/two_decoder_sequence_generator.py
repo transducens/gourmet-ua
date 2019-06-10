@@ -14,6 +14,7 @@ from fairseq.models import FairseqIncrementalDecoder
 
 
 class TwoDecoderSequenceGenerator(object):
+    DEBUG=False
     def __init__(
         self,
         tgt_dict,
@@ -66,6 +67,7 @@ class TwoDecoderSequenceGenerator(object):
             match_source_len (bool, optional): outputs should match the source
                 length (default: False)
         """
+        
 
         #pad, unk and eos have the same indexes in all dictionaries.
         # See: https://github.com/pytorch/fairseq/blob/v0.6.2/fairseq/data/dictionary.py
@@ -87,6 +89,9 @@ class TwoDecoderSequenceGenerator(object):
         self.retain_dropout = retain_dropout
         self.match_source_len = match_source_len
         self.no_repeat_ngram_size = no_repeat_ngram_size
+        
+        self.tgt_dict=tgt_dict
+        self.tgt_dict_b=tgt_dict_b
 
         assert sampling_topk < 0 or sampling, '--sampling-topk requires --sampling'
 
@@ -118,7 +123,7 @@ class TwoDecoderSequenceGenerator(object):
             prefix_tokens (torch.LongTensor, optional): force decoder to begin
                 with these tokens
         """
-        model = EnsembleModel(models)
+        model = EnsembleModel(models,self.tgt_dict,self.tgt_dict_b)
         if not self.retain_dropout:
             model.eval()
 
@@ -239,10 +244,13 @@ class TwoDecoderSequenceGenerator(object):
 
             # clone relevant token and attention tensors
             tokens_clone = tokens.index_select(0, bbsz_idx)
+            #print("finalize_hypos: tokens_clone 1: {}".format(tokens_clone))
             #CHANGE: skip first two indexes
-            tokens_clone = tokens_clone[:, 2:step + 2]  # skip the first index, which is EOS
-            tokens_clone[:, step-1] = self.eos
-            attn_clone = attn.index_select(0, bbsz_idx)[:, :, 2:step+2] if attn is not None else None
+            tokens_clone = tokens_clone[:, 2:step + 3]  # skip the first index, which is EOS
+            #print("finalize_hypos: tokens_clone 2: {}".format(tokens_clone))
+            tokens_clone[:, step] = self.eos
+            #print("finalize_hypos: tokens_clone 3: {}".format(tokens_clone))
+            attn_clone = attn.index_select(0, bbsz_idx)[:, :, 2:step+3] if attn is not None else None
 
             # compute scores per token position
             pos_scores = scores.index_select(0, bbsz_idx)[:, :step+1]
@@ -281,8 +289,9 @@ class TwoDecoderSequenceGenerator(object):
                     else:
                         hypo_attn = None
                         alignment = None
+                    if TwoDecoderSequenceGenerator.DEBUG:
+                        print("Finalizing hypothesis: {}. Score: {} Tags: {}. Surface forms: {}.".format(tokens_clone[i], score, self.tgt_dict_b.string(tokens_clone[i][0::2]) , self.tgt_dict.string(tokens_clone[i][1::2])))
 
-                    #print("Finalizing hypothesis: {}".format(tokens_clone[i]))
                     return {
                         'tokens': tokens_clone[i][1::2],
                         'tags': tokens_clone[i][0::2],
@@ -333,8 +342,18 @@ class TwoDecoderSequenceGenerator(object):
                 model.reorder_incremental_state(reorder_state)
                 encoder_outs=model.reorder_encoder_out(encoder_outs, reorder_state)
 
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print("Incremental state: {}".format(model.incremental_states))
+                print("Incremental state_b: {}".format(model.incremental_states_b))
+
             #CHANGE: call the appropriate decoder: step +1 -> step +2
             lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step)
+            if is_decoder_b_step:
+                d=self.tgt_dict_b
+            else:
+                d=self.tgt_dict
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print("Results of the step\nMax lprobs: {} {} {}\n".format(torch.argmax(lprobs,-1), d.string(torch.argmax(lprobs,-1)),torch.max(lprobs,-1)))
 
             lprobs[:, self.pad] = -math.inf  # never select pad
             lprobs[:, self.unk] -= self.unk_penalty  # apply unk penalty
@@ -407,6 +426,8 @@ class TwoDecoderSequenceGenerator(object):
                         cand_indices[partial_prefix_mask] = partial_indices[partial_prefix_mask]
                         cand_beams[partial_prefix_mask] = partial_beams[partial_prefix_mask]
                 else:
+                    if TwoDecoderSequenceGenerator.DEBUG:
+                        print("Calling beam search with\nscores:{}".format(scores.view(bsz, beam_size, -1)[:, :, :step]))
                     #CHANGE: search and search_b
                     search_f= self.search_b if is_decoder_b_step else self.search
                     my_vocab_size=self.vocab_size_b if is_decoder_b_step else self.vocab_size
@@ -415,6 +436,8 @@ class TwoDecoderSequenceGenerator(object):
                         lprobs.view(bsz, -1, my_vocab_size),
                         scores.view(bsz, beam_size, -1)[:, :, :step],
                     )
+                    if TwoDecoderSequenceGenerator.DEBUG:
+                        print("Result of beam search\ncand_scores:{}\ncand_indices:{}\ncand_beams:{}\n".format( cand_scores, cand_indices, cand_beams))
             else:
                 # make probs contain cumulative scores for each hypothesis
                 lprobs.add_(scores[:, step - 1].unsqueeze(-1))
@@ -536,10 +559,9 @@ class TwoDecoderSequenceGenerator(object):
                     scores[:, :step], dim=0, index=active_bbsz_idx,
                     out=scores_buf[:, :step],
                 )
-            #CHANGE: step -> step +1
             torch.gather(
                 cand_scores, dim=1, index=active_hypos,
-                out=scores_buf.view(bsz, beam_size, -1)[:, :, step+1],
+                out=scores_buf.view(bsz, beam_size, -1)[:, :, step],
             )
 
             # copy attention for active hypotheses
@@ -557,6 +579,11 @@ class TwoDecoderSequenceGenerator(object):
 
             # reorder incremental state in decoder
             reorder_state = active_bbsz_idx
+            
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print("End of loop.\nscores: {}\ntokens: {}\n".format(scores[:,:step+1],tokens[:,:step+3]))
+            #print("Incremental state: {}".format(model.incremental_states))
+            #print("Incremental state_b: {}".format(model.incremental_states_b))
 
         # sort by score descending
         for sent in range(len(finalized)):
@@ -569,7 +596,7 @@ class TwoDecoderSequenceGenerator(object):
 class EnsembleModel(torch.nn.Module):
     """A wrapper around an ensemble of models."""
 
-    def __init__(self, models):
+    def __init__(self, models,tgt_dict,tgt_dict_b):
         super().__init__()
         self.models = torch.nn.ModuleList(models)
         self.incremental_states = None
@@ -578,6 +605,9 @@ class EnsembleModel(torch.nn.Module):
             self.incremental_states = {m: {} for m in models}
         if all(isinstance(m.decoder_b, FairseqIncrementalDecoder) for m in models):
             self.incremental_states_b = {m: {} for m in models}
+
+        self.tgt_dict=tgt_dict
+        self.tgt_dict_b=tgt_dict_b
 
     def has_encoder(self):
         return hasattr(self.models[0], 'encoder')
@@ -622,16 +652,22 @@ class EnsembleModel(torch.nn.Module):
 
         if is_decoder_b_step:
             dec = model.decoder_b
+            dict_a=self.tgt_dict_b
+            dict_b=self.tgt_dict
             #Factors decoder input: factors, surface forms
             tokens_in_a=torch.index_select(tokens, -1, torch.tensor(  [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device) )
             tokens_in_b=torch.index_select(tokens, -1, torch.tensor(  [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
         else:
             dec = model.decoder
+            dict_a=self.tgt_dict
+            dict_b=self.tgt_dict_b
             #surface forms decoder input: surface forms, factors
             tokens_in_a=torch.index_select(tokens, -1, torch.tensor( [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
             tokens_in_b=torch.index_select(tokens, -1, torch.tensor( [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device))
-
-        #print("tokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\n".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b))
+        
+        if TwoDecoderSequenceGenerator.DEBUG:
+            print("Doing one step in the decoder\ntokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b))
+            print("words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b ] ))
 
         if self.incremental_states is not None:
             decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
