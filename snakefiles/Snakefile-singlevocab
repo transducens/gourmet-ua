@@ -15,6 +15,11 @@ if "preprocessTwoDecoders" in config:
 	if config["preprocessTwoDecoders"]:
 		preprocessTwoDecoders=True
 
+preprocessAsyncFlag=""
+if "preprocessAsync" in config:
+	if config["preprocessAsync"]:
+		preprocessAsyncFlag="--disable_bpe_marks"
+
 #Output dirs
 permanentDir = config["permanentDir"]
 corpusDir = permanentDir + "/corpus"
@@ -269,7 +274,7 @@ rule make_databin_fairseq:
    output:
         modelDir+"/data-bin"
    shell:
-        "fairseq-preprocess --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 " if not preprocessTwoDecoders else " python3 {tools}/scripts/fairseq_preprocess_factors.py --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 --additional_decoder_tl"
+        "fairseq-preprocess --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 " if not preprocessTwoDecoders else " python3 {tools}/scripts/fairseq_preprocess_factors.py --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 --additional_decoder_tl {preprocessAsyncFlag}"
 
 ####################################################### TRUECASE ###########################################################
 
