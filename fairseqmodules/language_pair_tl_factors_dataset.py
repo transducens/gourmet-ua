@@ -35,12 +35,22 @@ def collate(
     prev_output_factors =None
     cur_output_factors =None
     target = None
+
+    asyncTLFactors=False
     if samples[0].get('target', None) is not None:
+
+        if samples[0].get('target_factors_async', None) is not None:
+            asyncTLFactors=True
+
         target = merge('target', left_pad=left_pad_target)
         target = target.index_select(0, sort_order)
 
         target_factors=merge('target_factors', left_pad=left_pad_target)
         target_factors = target_factors.index_select(0, sort_order)
+
+        if asyncTLFactors:
+            target_factors_async=merge('target_factors_async', left_pad=left_pad_target)
+            target_factors_async = target_factors_async.index_select(0, sort_order)
 
         ntokens = sum(len(s['target']) for s in samples)+sum(len(s['target_factors']) for s in samples)
 
@@ -54,12 +64,25 @@ def collate(
             )
             prev_output_tokens = prev_output_tokens.index_select(0, sort_order)
 
-            prev_output_factors = merge(
+            cur_output_factors= merge(
                 'target_factors',
                 left_pad=left_pad_target,
-                move_eos_to_beginning=True,
+                move_eos_to_beginning=False,
             )
-            cur_output_factors=prev_output_factors
+            cur_output_factors = cur_output_factors.index_select(0, sort_order)
+
+            if asyncTLFactors:
+                prev_output_factors=merge(
+                    'target_factors_async',
+                    left_pad=left_pad_target,
+                    move_eos_to_beginning=True,
+                )
+            else:
+                prev_output_factors = merge(
+                    'target_factors',
+                    left_pad=left_pad_target,
+                    move_eos_to_beginning=True,
+                )
             prev_output_factors = prev_output_factors.index_select(0, sort_order)
     else:
         ntokens = sum(len(s['source']) for s in samples)
@@ -75,6 +98,8 @@ def collate(
         'target': target,
         'target_factors': target_factors
     }
+    if asyncTLFactors:
+        batch['target_factors_async'] = target_factors_async
     if prev_output_tokens is not None:
         batch['net_input']['prev_output_tokens'] = prev_output_tokens
     if prev_output_factors is not None:
@@ -97,7 +122,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         tgt_factors=None,tgt_factors_sizes=None, tgt_factors_dict=None,
         left_pad_source=True, left_pad_target=False,
         max_source_positions=1024, max_target_positions=1024,
-        shuffle=True, input_feeding=True, remove_eos_from_source=False, append_eos_to_target=False,
+        shuffle=True, input_feeding=True, remove_eos_from_source=False, append_eos_to_target=False,tgt_factors_async=None,tgt_factors_async_sizes=None
     ):
         super().__init__(src, src_sizes, src_dict,
         tgt, tgt_sizes, tgt_dict,
@@ -109,16 +134,22 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         self.tgt_factors_sizes=tgt_factors_sizes
         self.tgt_factors_dict=tgt_factors_dict
 
+        self.tgt_factors_async=tgt_factors_async
+        self.tgt_factors_async_sizes=tgt_factors_async_sizes
 
     def __getitem__(self, index):
         d=super().__getitem__(index)
         tgt_factors_item =self.tgt_factors[index] if self.tgt_factors is not None else None
+        tgt_factors_async_item=self.tgt_factors_async[index] if self.tgt_factors_async is not None else None
         if self.append_eos_to_target:
             eos = self.tgt_factors_dict.eos() if self.tgt_factors_dict else self.src_dict.eos()
             if self.tgt_factors and self.tgt_factors[index][-1] != eos:
                 tgt_factors_item = torch.cat([self.tgt_factors[index], torch.LongTensor([eos])])
+            if self.tgt_factors_async and self.tgt_factors_async[index][-1] != eos:
+                tgt_factors_async_item = torch.cat([self.tgt_factors_async[index], torch.LongTensor([eos])])
 
         d['target_factors']=tgt_factors_item
+        d['target_factors_async']=tgt_factors_async_item
         return d
 
     def collater(self, samples):

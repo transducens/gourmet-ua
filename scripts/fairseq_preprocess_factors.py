@@ -56,7 +56,7 @@ def main(args):
                 out_f.write(outstr)
                 out_f.write("\n")
 
-    def retain_interleaving_tags(infile,outfile):
+    def retain_interleaving_tags(infile,outfile,add_mark=True, match_bpe=True):
         NOEOW="@@"
         with open(infile) as in_f, open(outfile,"w") as out_f:
             for l in in_f:
@@ -66,19 +66,22 @@ def main(args):
                 tags=[  t for t in toks if t.startswith("interleaved_")]
                 o=[]
                 tagp=0
-                for w in words:
-                    if not w.endswith(NOEOW):
-                        #This is the end of a word
-                        o.append(tags[tagp])
-                        tagp+=1
-                    else:
-                        #This is not
-                        o.append(tags[tagp]+NOEOW)
+                if match_bpe:
+                    for w in words:
+                        if not w.endswith(NOEOW):
+                            #This is the end of a word
+                            o.append(tags[tagp])
+                            tagp+=1
+                        else:
+                            #This is not
+                            o.append(tags[tagp]+(NOEOW if add_mark else ""))
+                else:
+                    o=tags
                 outstr=" ".join(o)
                 out_f.write(outstr)
                 out_f.write("\n")
 
-    def build_dictionary(filenames, src=False, tgt=False, factors=False):
+    def build_dictionary(filenames, src=False, tgt=False, factors=False, add_mark=True):
         assert src ^ tgt
 
         in_filenames=filenames
@@ -90,7 +93,7 @@ def main(args):
                 tmpfn=tmpf.name
                 tmpf.close()
                 if factors == True:
-                    retain_interleaving_tags(fn,tmpfn)
+                    retain_interleaving_tags(fn,tmpfn,add_mark)
                 else:
                     remove_interleaving_tags(fn,tmpfn)
                 temp_filenames.add(tmpfn)
@@ -153,7 +156,7 @@ def main(args):
 
     #If we are using a second decoder, we need an independent dictionary
     if args.additional_decoder_tl:
-        tgt_factors_dict= build_dictionary([train_path(args.target_lang)], tgt=True,factors=True)
+        tgt_factors_dict= build_dictionary([train_path(args.target_lang)], tgt=True,factors=True, add_mark=not args.disable_bpe_marks)
         tgt_factors_dict.save(dict_path(args.target_lang+"factors"))
 
 
@@ -179,7 +182,10 @@ def main(args):
             if not output_prefix.endswith("factors"):
                 remove_interleaving_tags(input_file,input_temp_file)
             else:
-                retain_interleaving_tags(input_file,input_temp_file)
+                if output_prefix.endswith("asyncfactors"):
+                    retain_interleaving_tags(input_file,input_temp_file,add_mark=False, match_bpe=False)
+                else:
+                    retain_interleaving_tags(input_file,input_temp_file,not args.disable_bpe_marks)
             input_file=input_temp_file
 
 
@@ -249,10 +255,13 @@ def main(args):
             )
             shutil.copyfile(file_name(input_prefix, lang), output_text_file)
 
-    def make_all(lang, vocab, factors=False):
+    def make_all(lang, vocab, factors=False, async_factors=False):
         prefsuf=""
         if factors:
-            prefsuf="factors"
+            if async_factors:
+                prefsuf="asyncfactors"
+            else
+                prefsuf="factors"
         if args.trainpref:
             make_dataset(vocab, args.trainpref, "train{}".format(prefsuf), lang, num_workers=args.workers)
         if args.validpref:
@@ -269,7 +278,9 @@ def main(args):
         make_all(args.target_lang, tgt_dict)
         if args.additional_decoder_tl:
             make_all(args.target_lang, tgt_factors_dict, factors=True)
-
+            if args.disable_bpe_marks:
+                #Create an additional version in which tgt factors are not duplicated to match bpe
+                make_all(args.target_lang, tgt_factors_dict, factors=True, async_factors=True)
     print("| Wrote preprocessed data to {}".format(args.destdir))
 
     if args.alignfile:
@@ -359,6 +370,7 @@ def cli_main():
     parser = options.get_preprocessing_parser()
     #Custom options
     parser.add_argument('--additional_decoder_tl', action='store_true',help='Add an additional decoder instead of interleaving')
+    parser.add_argument('--disable_bpe_marks', action='store_true',help='Disable BPE marks on factors')
     args = parser.parse_args()
     main(args)
 
