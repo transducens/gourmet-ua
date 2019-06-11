@@ -84,6 +84,7 @@ def collate(
                     move_eos_to_beginning=True,
                 )
             prev_output_factors = prev_output_factors.index_select(0, sort_order)
+
     else:
         ntokens = sum(len(s['source']) for s in samples)
 
