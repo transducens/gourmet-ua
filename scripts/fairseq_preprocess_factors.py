@@ -260,7 +260,7 @@ def main(args):
         if factors:
             if async_factors:
                 prefsuf="asyncfactors"
-            else
+            else:
                 prefsuf="factors"
         if args.trainpref:
             make_dataset(vocab, args.trainpref, "train{}".format(prefsuf), lang, num_workers=args.workers)

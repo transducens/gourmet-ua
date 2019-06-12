@@ -23,8 +23,8 @@ class LSTMTwoDecodersAsyncModel(LSTMModel):
         self.decoder = decoder
         self.decoder_b = decoder_b
         assert isinstance(self.encoder, FairseqEncoder)
-        assert isinstance(self.decoder, LSTMDecoderTwoInputs)
-        assert isinstance(self.decoder_b, LSTMDecoderTwoInputs)
+        assert isinstance(self.decoder, lstm_two_decoders_model.LSTMDecoderTwoInputs)
+        assert isinstance(self.decoder_b, LSTMDecoder)
 
 
     @classmethod
@@ -163,3 +163,10 @@ class LSTMTwoDecodersAsyncModel(LSTMModel):
         decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
         decoder_b_out = self.decoder_b(prev_output_factors, encoder_out)
         return decoder_out, decoder_b_out
+
+
+@register_model_architecture('lstm_two_decoders_async', 'lstm_two_decoders_async')
+def lstm_two_decoders(args):
+    args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 1024)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 1024)
+    args.encoder_bidirectional= getattr(args, 'encoder_bidirectional', True)
