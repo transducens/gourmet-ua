@@ -347,8 +347,18 @@ class TwoDecoderSequenceGenerator(object):
                 print("Incremental state: {}".format(model.incremental_states))
                 print("Incremental state_b: {}".format(model.incremental_states_b))
 
+            #Compute last scores chosen by beam search on the same decoder
+            last_scores=[0.0 for i in range(scores.size(0))]
+            if step <= 2:
+                for i in range(scores.size(0)):
+                    last_scores[i]=scores[i][0] 
+            else:
+                for i in range(scores.size(0)):
+                    last_scores[i]=scores[i][step-2] - scores[i][step-3]
+
+
             #CHANGE: call the appropriate decoder: step +1 -> step +2
-            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step)
+            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step,last_scores)
             if is_decoder_b_step:
                 d=self.tgt_dict_b
             else:
@@ -627,7 +637,7 @@ class EnsembleModel(torch.nn.Module):
         return [model.encoder(**encoder_input) for model in self.models]
 
     @torch.no_grad()
-    def forward_decoder(self, tokens, encoder_outs, is_decoder_b_step=False):
+    def forward_decoder(self, tokens, encoder_outs, is_decoder_b_step=False,last_scores=None):
         if len(self.models) == 1:
             return self._decode_one(
                 tokens,
@@ -635,13 +645,14 @@ class EnsembleModel(torch.nn.Module):
                 encoder_outs[0] if self.has_encoder() else None,
                 self.incremental_states,
                 log_probs=True,
-                is_decoder_b_step=is_decoder_b_step
+                is_decoder_b_step=is_decoder_b_step,
+                last_scores=last_scores
             )
 
         log_probs = []
         avg_attn = None
         for model, encoder_out in zip(self.models, encoder_outs):
-            probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step)
+            probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,last_scores=last_scores)
             log_probs.append(probs)
             if attn is not None:
                 if avg_attn is None:
@@ -653,7 +664,7 @@ class EnsembleModel(torch.nn.Module):
             avg_attn.div_(len(self.models))
         return avg_probs, avg_attn
 
-    def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step):
+    def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step,last_scores):
         SPLITWORDMARK="@@"
         dummy_steps=[False for i in range(tokens.size(0))]
         if is_decoder_b_step:
@@ -687,7 +698,7 @@ class EnsembleModel(torch.nn.Module):
             tokens_in_b=torch.index_select(tokens, -1, torch.tensor( [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device))
 
         if TwoDecoderSequenceGenerator.DEBUG:
-            print("Doing one step in the decoder\ntokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\ndummy steps: {}".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b, dummy_steps))
+            print("Doing one step in the decoder\nlast_scores:{}\ntokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\ndummy steps: {}".format(last_scores,tokens,is_decoder_b_step,tokens_in_a,tokens_in_b, dummy_steps))
             print("words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b ] ))
 
         if self.incremental_states is not None:
@@ -695,17 +706,20 @@ class EnsembleModel(torch.nn.Module):
                 input_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]
 
                 #This structure depends on the particular model and might not work
-                #with models different from LSTM
+                #with models different from LSTM or multi-layer LSTM
 
                 #List of dictionaries
                 #Each dictionary: beam id -> state to keep
                 backup_states=[]
-                for state_comp_idx,state_comp in enumerate(input_state['LSTMDecoder.1.cached_state']):
-                    d={}
-                    for beam_idx,beam_state in enumerate(state_comp):
-                        if dummy_steps[beam_idx]:
-                            d[beam_idx]=beam_state
-                    backup_states.append(d)
+                if 'LSTMDecoder.1.cached_state' in input_state:
+                    for state_comp_idx,state_comp in enumerate(input_state['LSTMDecoder.1.cached_state']):
+                        if isinstance(state_comp,list):
+                            state_comp=state_comp[0]
+                        d={}
+                        for beam_idx,beam_state in enumerate(state_comp):
+                            if dummy_steps[beam_idx]:
+                                d[beam_idx]=beam_state
+                        backup_states.append(d)
 
                 if TwoDecoderSequenceGenerator.DEBUG:
                     print("Backup states: {}".format(backup_states))
@@ -714,7 +728,10 @@ class EnsembleModel(torch.nn.Module):
                 #Restore states
                 for state_comp_idx,state_comp_dict in enumerate(backup_states):
                     for k in state_comp_dict:
-                        input_state[state_comp_idx][k]=state_comp_dict[k]
+                        if isinstance(input_state['LSTMDecoder.1.cached_state'][state_comp_idx],list):
+                            input_state['LSTMDecoder.1.cached_state'][state_comp_idx][0][k]=state_comp_dict[k]
+                        else:
+                            input_state['LSTMDecoder.1.cached_state'][state_comp_idx][k]=state_comp_dict[k]
             else:
                 decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
         else:
@@ -732,6 +749,12 @@ class EnsembleModel(torch.nn.Module):
             attn = attn[:, -1, :]
         probs = model.get_normalized_probs(decoder_out, log_probs=log_probs)
         probs = probs[:, -1, :]
+
+        for i,is_dummy in enumerate(dummy_steps):
+            if is_dummy:
+                #Force decoder to produce the same tag
+                probs[i][:]=-math.inf
+                probs[i][ tokens_in_a[i][-1]  ]=last_scores[i]
         return probs, attn
 
     def reorder_encoder_out(self, encoder_outs, new_order):
