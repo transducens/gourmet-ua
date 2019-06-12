@@ -75,6 +75,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         src_datasets = []
         tgt_datasets = []
         tgt_factors_datasets = []
+        tgt_factors_async_datasets = []
 
         data_paths = self.args.data
 
@@ -82,14 +83,17 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             for k in itertools.count():
                 split_k = split + (str(k) if k > 0 else '')
 
+                #TODO: avoid loading aync factors always!!!
                 # infer langcode
                 src, tgt = self.args.source_lang, self.args.target_lang
                 if split_exists(split_k, src, tgt, src, data_path):
                     prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, src, tgt))
                     prefix_factors=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factors", src, tgt))
+                    prefix_factors_async=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factorsasync", src, tgt))
                 elif split_exists(split_k, tgt, src, src, data_path):
                     prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, tgt, src))
                     prefix_factors = os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factors", tgt, src))
+                    prefix_factors_async = os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factorsasync", tgt, src))
                 else:
                     if k > 0 or dk > 0:
                         break
@@ -99,6 +103,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 src_datasets.append(indexed_dataset(prefix + src, self.src_dict))
                 tgt_datasets.append(indexed_dataset(prefix + tgt, self.tgt_dict))
                 tgt_factors_datasets.append(indexed_dataset(prefix_factors + tgt , self.tgt_factors_dict))
+                tgt_factors_async_datasets.append(indexed_dataset(prefix_factors_async + tgt , self.tgt_factors_dict))
 
                 print('| {} {} {} examples'.format(data_path, split_k, len(src_datasets[-1])))
 
@@ -115,6 +120,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             src_dataset = ConcatDataset(src_datasets, sample_ratios)
             tgt_dataset = ConcatDataset(tgt_datasets, sample_ratios)
             tgt_factors_dataset = ConcatDataset(tgt_factors_datasets, sample_ratios)
+            tgt_factors_async_dataset = ConcatDataset(tgt_factors_async_datasets, sample_ratios)
 
         self.datasets[split] = language_pair_tl_factors_dataset.LanguagePairTLFactorsDataset(
             src_dataset, src_dataset.sizes, self.src_dict,
@@ -123,7 +129,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             left_pad_source=self.args.left_pad_source,
             left_pad_target=self.args.left_pad_target,
             max_source_positions=self.args.max_source_positions,
-            max_target_positions=self.args.max_target_positions,
+            max_target_positions=self.args.max_target_positions,tgt_factors_async_dataset, tgt_factors_async_dataset.sizes
         )
 
     def build_generator(self, args):
