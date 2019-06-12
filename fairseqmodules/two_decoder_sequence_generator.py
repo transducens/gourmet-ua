@@ -692,7 +692,29 @@ class EnsembleModel(torch.nn.Module):
 
         if self.incremental_states is not None:
             if self.async and is_decoder_b_step:
-                decoder_out = list(dec(tokens_in_a, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
+                input_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]
+
+                #This structure depends on the particular model and might not work
+                #with models different from LSTM
+
+                #List of dictionaries
+                #Each dictionary: beam id -> state to keep
+                backup_states=[]
+                for state_comp_idx,state_comp in enumerate(input_state['LSTMDecoder.1.cached_state']):
+                    d={}
+                    for beam_idx,beam_state in enumerate(state_comp):
+                        if dummy_steps[beam_idx]:
+                            d[beam_idx]=beam_state
+                    backup_states.append(d)
+
+                if TwoDecoderSequenceGenerator.DEBUG:
+                    print("Backup states: {}".format(backup_states))
+                decoder_out = list(dec(tokens_in_a, encoder_out, incremental_state=input_state))
+
+                #Restore states
+                for state_comp_idx,state_comp_dict in enumerate(backup_states):
+                    for k in state_comp_dict:
+                        input_state[state_comp_idx][k]=state_comp_dict[k]
             else:
                 decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
         else:
