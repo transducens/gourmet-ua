@@ -691,9 +691,15 @@ class EnsembleModel(torch.nn.Module):
             print("words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b ] ))
 
         if self.incremental_states is not None:
-            decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
+            if self.async and is_decoder_b_step:
+                decoder_out = list(dec(tokens_in_a, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
+            else:
+                decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
         else:
-            decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out))
+            if self.async and is_decoder_b_step:
+                decoder_out = list(dec(tokens_in_a, encoder_out))
+            else:
+                decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out))
         decoder_out[0] = decoder_out[0][:, -1:, :]
         attn = decoder_out[1]
         if type(attn) is dict:
