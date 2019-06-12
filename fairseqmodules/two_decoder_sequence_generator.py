@@ -12,6 +12,7 @@ import torch
 from fairseq import search, utils
 from fairseq.models import FairseqIncrementalDecoder
 
+from . import lstm_two_decoders_async_model
 
 class TwoDecoderSequenceGenerator(object):
     DEBUG=False
@@ -67,7 +68,7 @@ class TwoDecoderSequenceGenerator(object):
             match_source_len (bool, optional): outputs should match the source
                 length (default: False)
         """
-        
+
 
         #pad, unk and eos have the same indexes in all dictionaries.
         # See: https://github.com/pytorch/fairseq/blob/v0.6.2/fairseq/data/dictionary.py
@@ -89,7 +90,7 @@ class TwoDecoderSequenceGenerator(object):
         self.retain_dropout = retain_dropout
         self.match_source_len = match_source_len
         self.no_repeat_ngram_size = no_repeat_ngram_size
-        
+
         self.tgt_dict=tgt_dict
         self.tgt_dict_b=tgt_dict_b
 
@@ -579,7 +580,7 @@ class TwoDecoderSequenceGenerator(object):
 
             # reorder incremental state in decoder
             reorder_state = active_bbsz_idx
-            
+
             if TwoDecoderSequenceGenerator.DEBUG:
                 print("End of loop.\nscores: {}\ntokens: {}\n".format(scores[:,:step+1],tokens[:,:step+3]))
             #print("Incremental state: {}".format(model.incremental_states))
@@ -598,6 +599,10 @@ class EnsembleModel(torch.nn.Module):
 
     def __init__(self, models,tgt_dict,tgt_dict_b):
         super().__init__()
+        self.async=False
+        if isinstance(models[0],lstm_two_decoders_async_model.LSTMTwoDecodersAsyncModel):
+            self.async=True
+
         self.models = torch.nn.ModuleList(models)
         self.incremental_states = None
         self.incremental_states_b = None
@@ -649,7 +654,8 @@ class EnsembleModel(torch.nn.Module):
         return avg_probs, avg_attn
 
     def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step):
-
+        SPLITWORDMARK="@@"
+        dummy_steps=[False for i in range(tokens.size(0))]
         if is_decoder_b_step:
             dec = model.decoder_b
             dict_a=self.tgt_dict_b
@@ -657,16 +663,31 @@ class EnsembleModel(torch.nn.Module):
             #Factors decoder input: factors, surface forms
             tokens_in_a=torch.index_select(tokens, -1, torch.tensor(  [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device) )
             tokens_in_b=torch.index_select(tokens, -1, torch.tensor(  [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
+
+            if self.async:
+                dummy_steps=[False for i in range(tokens.size(0))]
+                #If last element of tokens_b is not an end of word, activate dummy flag
+                for i in range(tokens_in_b.size(0)):
+                    if  self.tgt_dict[ tokens_in_b[i][-1] ].endswith(SPLITWORDMARK):
+                        dummy_steps[i]=True
+            #Async:
+            #if last element of tokens_in_b is not an end of word:
+            #   - restore previous state after calling the decoder
+            #   - alter output probabilities: set same tag to 1 and others to 0 (be careful with logs!!)
+            #else:
+            #   - Nothing to do: morph tags are repeated
         else:
+            #Async:
+            #   - Nothing to do: morph tags are repeated
             dec = model.decoder
             dict_a=self.tgt_dict
             dict_b=self.tgt_dict_b
             #surface forms decoder input: surface forms, factors
             tokens_in_a=torch.index_select(tokens, -1, torch.tensor( [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
             tokens_in_b=torch.index_select(tokens, -1, torch.tensor( [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device))
-        
+
         if TwoDecoderSequenceGenerator.DEBUG:
-            print("Doing one step in the decoder\ntokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b))
+            print("Doing one step in the decoder\ntokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\ndummy steps: {}".format(tokens,is_decoder_b_step,tokens_in_a,tokens_in_b, dummy_steps))
             print("words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b ] ))
 
         if self.incremental_states is not None:
