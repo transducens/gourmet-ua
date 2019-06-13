@@ -129,7 +129,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             left_pad_source=self.args.left_pad_source,
             left_pad_target=self.args.left_pad_target,
             max_source_positions=self.args.max_source_positions,
-            max_target_positions=self.args.max_target_positions,tgt_factors_async=tgt_factors_async_dataset, tgt_factors_async_sizes=tgt_factors_async_dataset.sizes
+            max_target_positions=self.args.max_target_positions,tgt_factors_async=tgt_factors_async_dataset, tgt_factors_async_sizes=tgt_factors_async_dataset.sizes if tgt_factors_async_dataset else None
         )
 
     def build_generator(self, args):
