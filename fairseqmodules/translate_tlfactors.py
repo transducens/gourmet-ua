@@ -89,11 +89,11 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 if split_exists(split_k, src, tgt, src, data_path):
                     prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, src, tgt))
                     prefix_factors=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factors", src, tgt))
-                    prefix_factors_async=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factorsasync", src, tgt))
+                    prefix_factors_async=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"asyncfactors", src, tgt))
                 elif split_exists(split_k, tgt, src, src, data_path):
                     prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, tgt, src))
                     prefix_factors = os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factors", tgt, src))
-                    prefix_factors_async = os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factorsasync", tgt, src))
+                    prefix_factors_async = os.path.join(data_path, '{}.{}-{}.'.format(split_k+"asyncfactors", tgt, src))
                 else:
                     if k > 0 or dk > 0:
                         break
@@ -113,7 +113,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         assert len(src_datasets) == len(tgt_datasets)
 
         if len(src_datasets) == 1:
-            src_dataset, tgt_dataset , tgt_factors_dataset = src_datasets[0], tgt_datasets[0], tgt_factors_datasets[0]
+            src_dataset, tgt_dataset , tgt_factors_dataset, tgt_factors_async_dataset = src_datasets[0], tgt_datasets[0], tgt_factors_datasets[0], tgt_factors_async_datasets[0]
         else:
             sample_ratios = [1] * len(src_datasets)
             sample_ratios[0] = self.args.upsample_primary
@@ -129,7 +129,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             left_pad_source=self.args.left_pad_source,
             left_pad_target=self.args.left_pad_target,
             max_source_positions=self.args.max_source_positions,
-            max_target_positions=self.args.max_target_positions,tgt_factors_async_dataset, tgt_factors_async_dataset.sizes
+            max_target_positions=self.args.max_target_positions,tgt_factors_async=tgt_factors_async_dataset, tgt_factors_async_sizes=tgt_factors_async_dataset.sizes
         )
 
     def build_generator(self, args):

@@ -140,7 +140,7 @@ class LSTMTwoDecodersAsyncModel(LSTMModel):
 
     def get_target_factors(self, sample, net_output):
         """Get targets from either the sample or the net's output."""
-        return sample['target_factors']
+        return sample['target_factors_async']
 
     def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors):
         """
@@ -159,6 +159,7 @@ class LSTMTwoDecodersAsyncModel(LSTMModel):
         Returns:
             the decoder's output, typically of shape `(batch, tgt_len, vocab)`
         """
+        #print("prev_output_tokens:({}){}\nprev_output_factors:({}){}\ncur_output_factors:({}){}".format(prev_output_tokens.size(),prev_output_tokens, prev_output_factors.size(), prev_output_factors, cur_output_factors.size(), cur_output_factors))
         encoder_out = self.encoder(src_tokens, src_lengths)
         decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
         decoder_b_out = self.decoder_b(prev_output_factors, encoder_out)
