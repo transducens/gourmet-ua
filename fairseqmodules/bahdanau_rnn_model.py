@@ -221,7 +221,7 @@ class ConcatAttentionLayer(nn.Module):
         self.activ_input_proj=nn.Tanh()
         self.score_proj = Linear(alignment_dim, 1, bias=bias)
 
-        self.dropout_p=droput
+        self.dropout_p=dropout
         self.dropout_input=nn.Dropout(dropout)
 
     def forward(self, input, source_hids, encoder_padding_mask):
@@ -262,7 +262,7 @@ class ConcatAttentionLayer(nn.Module):
 
         return x, attn_scores
 
-lass GRUDecoder(FairseqIncrementalDecoder):
+class GRUDecoder(FairseqIncrementalDecoder):
     """GRU decoder."""
     def __init__(
         self, dictionary, embed_dim=512, hidden_size=512, out_embed_dim=512,
@@ -309,7 +309,7 @@ lass GRUDecoder(FairseqIncrementalDecoder):
         ])
         if attention:
             # TODO make bias configurable
-            self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, droput=dropout_out)#bias = True like Bahdanau
+            self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, dropout=dropout_out)#bias = True like Bahdanau
         else:
             self.attention = None
 
@@ -466,8 +466,8 @@ def Linear(in_features, out_features, bias=True, dropout=0):
     m.weight.data.uniform_(-0.1, 0.1)
     if bias:
         m.bias.data.uniform_(-0.1, 0.1)
-    m=nn.Dropout(m,dropout)
-    return m
+    d=nn.Dropout(dropout)
+    return nn.Sequential(m,d)
 
 def Embedding(num_embeddings, embedding_dim, padding_idx):
     m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
