@@ -3,5 +3,6 @@ from . import translate_early_test
 from . import translate_tlfactors
 from . import lstm_two_decoders_model
 from . import lstm_two_decoders_async_model
+from . import bahdanau_rnn_model
 from . import custom_architectures
 from . import label_smoothed_cross_entropy_two_decoders
