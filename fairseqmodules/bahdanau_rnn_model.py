@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from torch.distributions.bernoulli import Bernoulli
+
+
 from fairseq import options, utils
 from fairseq.modules import AdaptiveSoftmax
 from fairseq.models import (
@@ -148,6 +151,8 @@ class GRUEncoder(FairseqEncoder):
             self.output_units *= 2
 
     def forward(self, src_tokens, src_lengths):
+        #print("src_lengths: {}".format(src_lengths))
+
         if self.left_pad:
             # convert left-padding to right-padding
             src_tokens = utils.convert_padding_direction(
@@ -193,6 +198,10 @@ class GRUEncoder(FairseqEncoder):
 
         encoder_padding_mask = src_tokens.eq(self.padding_idx).t()
         #shape: (seq_len,bsz)
+        
+        #print("Encoder: {}".format(self))
+        #print("left_pad: {}".format(self.left_pad))
+        #print("Intermediate encoder_padding_mask: {}".format(encoder_padding_mask))
 
         return {
             'encoder_out': (x, final_hiddens),
@@ -244,7 +253,7 @@ class ConcatAttentionLayer(nn.Module):
         #x: srclen x bsz x alignment_dim
 
         #Reduce to one score
-        x= torch.squeeze(self.score_proj(x),-1)
+        attn_scores= torch.squeeze(self.score_proj(x),-1)
         #x: srclen x bsz
 
         #Apply softmax
@@ -295,14 +304,14 @@ class GRUDecoder(FairseqIncrementalDecoder):
         #linear + tanh for initial state
         #TODO: we are assuming encoder is always bidirectional
         #TODO: Linear ignores dropout!!
-        self.linear_initial_state=Linear(encoder_output_units*2,hidden_size,dropout=dropout_in)
+        self.linear_initial_state=Linear(encoder_output_units,hidden_size,dropout=dropout_in)
         self.activ_initial_state=nn.Tanh()
 
         #TODO: should we apply droput here?
         self.layers = nn.ModuleList([
             # LSTM used custom initialization here
             nn.GRUCell(
-                input_size=hidden_size + embed_dim if layer == 0 else hidden_size,
+                input_size=encoder_output_units + embed_dim if layer == 0 else hidden_size,
                 hidden_size=hidden_size,
             )
             for layer in range(num_layers)
@@ -316,7 +325,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
         self.logit_prev=Linear(out_embed_dim, out_embed_dim, dropout=dropout_out)
-        self.logit_ctx=Linear(2*encoder_output_units, out_embed_dim, dropout=dropout_out)
+        self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
         self.activ_deep_output=nn.Tanh()
 
         if adaptive_softmax_cutoff is not None:
@@ -363,8 +372,10 @@ class GRUDecoder(FairseqIncrementalDecoder):
             #shape of encoder_outs: (seq_len,bsz,num_directions*hidden_size)
             # shape of encoder_padding_mask: (seq_len,bsz)
             # shape of division: (bsz,num_directions*hidden_size)/ (bsz): we add unsqueeze(1) to make dimensions match
+            #print("encoder_outs: {}".format(encoder_outs))
+            #print("encoder_padding_mask: {}".format(encoder_padding_mask))
 
-            avg_states=torch.div( torch.sum(encoder_outs,0) , torch.sum(encoder_padding_mask,0).unsqueeze(1)    )
+            avg_states=torch.div( torch.sum(encoder_outs,0) , torch.sum(encoder_padding_mask,0).unsqueeze(1) if encoder_padding_mask else encoder_outs.size(0)   )
             #shape: (bsz,num_directions*hidden_size)
             hidden=self.activ_initial_state(self.linear_initial_state(avg_states))
             #shape: (bsz,decoder_hidden_size)
@@ -426,7 +437,11 @@ class GRUDecoder(FairseqIncrementalDecoder):
             attn_scores = None
 
         #deep output like nematus
-        x=self.activ_deep_output(self.logit_ctx() + self.logit_prev(logit_prev_input) + self.logit_lstm(x) )
+        logit_ctx_out=self.logit_ctx( torch.stack(context_vectors).transpose(0,1)  )
+        logit_prev_out=self.logit_prev(logit_prev_input)
+        logit_lstm_out=self.logit_lstm(x)
+
+        x=self.activ_deep_output(logit_ctx_out + logit_prev_out + logit_lstm_out )
 
         # project back to size of vocabulary
         if self.adaptive_softmax is None:
