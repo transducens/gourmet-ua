@@ -247,7 +247,7 @@ class ConcatAttentionLayer(nn.Module):
 
         #Repeat TL hidden state srclen times
         # x: srclen x bsz x input_embed_dim
-        x=self.dropout_input(input).expand(source_hids.size(0),-1,-1)
+        x=self.dropout_input(input).expand(masked_source_hids.size(0),-1,-1)
 
         #Apply same dropout to all timesteps of source_hids, like in Nematus
         #mask = Bernoulli(torch.full_like(source_hids[0], 1 - self.dropout_p)).sample()/(1 - self.dropout_p)
