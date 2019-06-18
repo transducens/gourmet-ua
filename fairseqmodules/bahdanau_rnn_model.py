@@ -14,6 +14,8 @@ from fairseq.models import (
 from fairseq.models.lstm import LSTMModel,LSTMEncoder,LSTMDecoder,base_architecture
 
 
+
+
 @register_model('bahdanau_rnn')
 class BahdanauRNNModel(LSTMModel):
 
@@ -111,7 +113,8 @@ class BahdanauRNNModel(LSTMModel):
                 if args.criterion == 'adaptive_loss' else None
             ),
         )
-        return cls(encoder, decoder)
+        r= cls(encoder, decoder)
+        return r
 
 
 class GRUEncoder(FairseqEncoder):
@@ -322,6 +325,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
         else:
             self.attention = None
 
+
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
         self.logit_prev=Linear(out_embed_dim, out_embed_dim, dropout=dropout_out)
@@ -338,6 +342,9 @@ class GRUDecoder(FairseqIncrementalDecoder):
     def forward(self, prev_output_tokens, encoder_out_dict, incremental_state=None):
         encoder_out = encoder_out_dict['encoder_out']
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
+        
+        #print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
+        #print("encoder_padding_mask: {}".format(encoder_padding_mask))
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]
@@ -374,8 +381,15 @@ class GRUDecoder(FairseqIncrementalDecoder):
             # shape of division: (bsz,num_directions*hidden_size)/ (bsz): we add unsqueeze(1) to make dimensions match
             #print("encoder_outs: {}".format(encoder_outs))
             #print("encoder_padding_mask: {}".format(encoder_padding_mask))
+            avg_states_num=torch.sum(encoder_outs,0)
+            avg_states_denom=encoder_outs.size(0) -  torch.sum(encoder_padding_mask,0).unsqueeze(1).type_as(encoder_outs) if encoder_padding_mask is not None else encoder_outs.size(0)
 
-            avg_states=torch.div( torch.sum(encoder_outs,0) , torch.sum(encoder_padding_mask,0).unsqueeze(1) if encoder_padding_mask else encoder_outs.size(0)   )
+            avg_states=torch.div( avg_states_num , avg_states_denom  )
+
+            #print("avg_states_num({}): {}".format(avg_states_num.size(),avg_states_num))
+            #print("avg_states_denom({}): {}".format(avg_states_denom.size() if not isinstance(avg_states_denom,int) else 0,avg_states_denom))
+            #print("avg_states({}): {}".format(avg_states.size(),avg_states))
+
             #shape: (bsz,num_directions*hidden_size)
             hidden=self.activ_initial_state(self.linear_initial_state(avg_states))
             #shape: (bsz,decoder_hidden_size)
@@ -391,7 +405,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
             if self.attention is not None:
                 context_vector, attn_scores[:, j, :] = self.attention(hidden, encoder_outs, encoder_padding_mask)
             else:
-                context_vector = hidden
+                context_vector = encoder_outs[0] #TODO: it should be the last state
             context_vectors.append(context_vector)
 
             #TODO: apply this dropout?
@@ -452,6 +466,8 @@ class GRUDecoder(FairseqIncrementalDecoder):
                 x = F.linear(x, self.embed_tokens.weight)
             else:
                 x = self.fc_out(x)
+
+        #print("Forward pass.\nx({}):{}\nattn_scores:{}".format(x.size(),x,attn_scores))
         return x, attn_scores
 
     def reorder_incremental_state(self, incremental_state, new_order):
