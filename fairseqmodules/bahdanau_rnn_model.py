@@ -201,7 +201,7 @@ class GRUEncoder(FairseqEncoder):
 
         encoder_padding_mask = src_tokens.eq(self.padding_idx).t()
         #shape: (seq_len,bsz)
-        
+
         #print("Encoder: {}".format(self))
         #print("left_pad: {}".format(self.left_pad))
         #print("Intermediate encoder_padding_mask: {}".format(encoder_padding_mask))
@@ -236,7 +236,12 @@ class ConcatAttentionLayer(nn.Module):
         self.dropout_p=dropout
         self.dropout_input=nn.Dropout(dropout)
 
-    def forward(self, input, source_hids, encoder_padding_mask):
+    def precompute_masked_source_hids(self,source_hids):
+        #Apply same dropout to all timesteps of source_hids, like in Nematus
+        mask = Bernoulli(torch.full_like(source_hids[0], 1 - self.dropout_p)).sample()/(1 - self.dropout_p)
+        return source_hids*mask # In theory, with broadcasting we multiply all timesteps by the same mask
+
+    def forward(self, input, masked_source_hids, encoder_padding_mask):
         # input: bsz x input_embed_dim
         # source_hids: srclen x bsz x source_embed_dim
 
@@ -245,11 +250,11 @@ class ConcatAttentionLayer(nn.Module):
         x=self.dropout_input(input).expand(source_hids.size(0),-1,-1)
 
         #Apply same dropout to all timesteps of source_hids, like in Nematus
-        mask = Bernoulli(torch.full_like(source_hids[0], 1 - self.dropout_p)).sample()/(1 - self.dropout_p)
-        source_hids=source_hids*mask # In theory, with broadcasting we multiply all timesteps by the same mask
+        #mask = Bernoulli(torch.full_like(source_hids[0], 1 - self.dropout_p)).sample()/(1 - self.dropout_p)
+        #source_hids=source_hids*mask # In theory, with broadcasting we multiply all timesteps by the same mask
 
         #Concatenate with source_hids
-        x=torch.cat((x,source_hids),-1)
+        x=torch.cat((x,masked_source_hids),-1)
 
         #Apply linear layer +  tanh
         x=self.activ_input_proj(self.input_proj(x))
@@ -270,7 +275,7 @@ class ConcatAttentionLayer(nn.Module):
         attn_scores = F.softmax(attn_scores, dim=0)  # srclen x bsz
 
         #Create context vector
-        x = (attn_scores.unsqueeze(2) * source_hids).sum(dim=0)
+        x = (attn_scores.unsqueeze(2) * masked_source_hids).sum(dim=0)
 
         return x, attn_scores
 
@@ -337,7 +342,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
     def forward(self, prev_output_tokens, encoder_out_dict, incremental_state=None):
         encoder_out = encoder_out_dict['encoder_out']
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
-        
+
         #print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
         #print("encoder_padding_mask: {}".format(encoder_padding_mask))
 
@@ -395,10 +400,15 @@ class GRUDecoder(FairseqIncrementalDecoder):
         attn_scores = x.new_zeros(srclen, seqlen, bsz)
         outs = []
         context_vectors=[]
+
+        if self.attention is not None:
+            #Precompute masked source hidden states
+            precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs)
+
         for j in range(seqlen):
             # apply attention using the last layer's hidden state
             if self.attention is not None:
-                context_vector, attn_scores[:, j, :] = self.attention(hidden, encoder_outs, encoder_padding_mask)
+                context_vector, attn_scores[:, j, :] = self.attention(hidden, precomputed_masked, encoder_padding_mask)
             else:
                 context_vector = encoder_outs[0] #TODO: it should be the last state
             context_vectors.append(context_vector)
