@@ -298,11 +298,6 @@ class GRUDecoder(FairseqIncrementalDecoder):
             self.embed_tokens = pretrained_embed
 
         self.encoder_output_units = encoder_output_units
-        if encoder_output_units != hidden_size:
-            self.encoder_hidden_proj = Linear(encoder_output_units, hidden_size)
-            self.encoder_cell_proj = Linear(encoder_output_units, hidden_size)
-        else:
-            self.encoder_hidden_proj = self.encoder_cell_proj = None
 
         #linear + tanh for initial state
         #TODO: we are assuming encoder is always bidirectional
