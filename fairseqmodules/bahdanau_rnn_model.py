@@ -243,6 +243,10 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
         )
         r= cls(encoder, decoder, decoder_b)
         return r
+        
+    def get_target_factors(self, sample, net_output):
+        """Get targets from either the sample or the net's output."""
+        return sample['target_factors_async']
 
     def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors):
         """
