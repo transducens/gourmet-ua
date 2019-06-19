@@ -243,7 +243,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
         )
         r= cls(encoder, decoder, decoder_b)
         return r
-        
+
     def get_target_factors(self, sample, net_output):
         """Get targets from either the sample or the net's output."""
         return sample['target_factors_async']
@@ -790,7 +790,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         if self.attention is not None:
             #Precompute masked source hidden states
-            precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs)
+            precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs) if self.training else encoder_outs
 
         for j in range(seqlen):
             # apply attention using the last layer's hidden state
