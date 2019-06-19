@@ -401,6 +401,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
         outs = []
         context_vectors=[]
 
+        prev_hiddens=list(prev_hiddens)
         if self.attention is not None:
             #Precompute masked source hidden states
             precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs)
@@ -408,7 +409,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
         for j in range(seqlen):
             # apply attention using the last layer's hidden state
             if self.attention is not None:
-                context_vector, attn_scores[:, j, :] = self.attention(hidden, precomputed_masked, encoder_padding_mask)
+                context_vector, attn_scores[:, j, :] = self.attention(prev_hiddens[-1], precomputed_masked, encoder_padding_mask)
             else:
                 context_vector = encoder_outs[0] #TODO: it should be the last state
             context_vectors.append(context_vector)
