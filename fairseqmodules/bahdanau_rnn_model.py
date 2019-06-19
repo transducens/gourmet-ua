@@ -896,6 +896,12 @@ def Embedding(num_embeddings, embedding_dim, padding_idx):
     return m
 
 
+@register_model_architecture('bahdanau_rnn_two_decoders_async', 'bahdanau_rnn_two_decoders_async')
+def bahdanau_rnn(args):
+    args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 1024)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 1024)
+    args.encoder_bidirectional= getattr(args, 'encoder_bidirectional', True)
+
 @register_model_architecture('bahdanau_rnn', 'bahdanau_rnn')
 def bahdanau_rnn(args):
     args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 1024)
