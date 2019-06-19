@@ -12,7 +12,7 @@ import torch
 from fairseq import search, utils
 from fairseq.models import FairseqIncrementalDecoder
 
-from . import lstm_two_decoders_async_model
+from . import lstm_two_decoders_async_model,bahdanau_rnn_model
 
 class TwoDecoderSequenceGenerator(object):
     DEBUG=False
@@ -351,7 +351,7 @@ class TwoDecoderSequenceGenerator(object):
             last_scores=[0.0 for i in range(scores.size(0))]
             if step <= 2:
                 for i in range(scores.size(0)):
-                    last_scores[i]=scores[i][0] 
+                    last_scores[i]=scores[i][0]
             else:
                 for i in range(scores.size(0)):
                     last_scores[i]=scores[i][step-2] - scores[i][step-3]
@@ -610,7 +610,7 @@ class EnsembleModel(torch.nn.Module):
     def __init__(self, models,tgt_dict,tgt_dict_b):
         super().__init__()
         self.async=False
-        if isinstance(models[0],lstm_two_decoders_async_model.LSTMTwoDecodersAsyncModel):
+        if isinstance(models[0],lstm_two_decoders_async_model.LSTMTwoDecodersAsyncModel) or isinstance(models[0],  bahdanau_rnn_model.BahdanauRNNTwoDecodersAsyncModel):
             self.async=True
 
         self.models = torch.nn.ModuleList(models)
@@ -711,8 +711,10 @@ class EnsembleModel(torch.nn.Module):
                 #List of dictionaries
                 #Each dictionary: beam id -> state to keep
                 backup_states=[]
-                if 'LSTMDecoder.1.cached_state' in input_state:
-                    for state_comp_idx,state_comp in enumerate(input_state['LSTMDecoder.1.cached_state']):
+                incremental_state_key=utils._get_full_incremental_state_key(dec, 'cached_state')
+                #TODO: check whether this works with GRU model
+                if incremental_state_key in input_state:
+                    for state_comp_idx,state_comp in enumerate(input_state[incremental_state_key]):
                         if isinstance(state_comp,list):
                             state_comp=state_comp[0]
                         d={}
@@ -728,10 +730,10 @@ class EnsembleModel(torch.nn.Module):
                 #Restore states
                 for state_comp_idx,state_comp_dict in enumerate(backup_states):
                     for k in state_comp_dict:
-                        if isinstance(input_state['LSTMDecoder.1.cached_state'][state_comp_idx],list):
-                            input_state['LSTMDecoder.1.cached_state'][state_comp_idx][0][k]=state_comp_dict[k]
+                        if isinstance(input_state[incremental_state_key][state_comp_idx],list):
+                            input_state[incremental_state_key][state_comp_idx][0][k]=state_comp_dict[k]
                         else:
-                            input_state['LSTMDecoder.1.cached_state'][state_comp_idx][k]=state_comp_dict[k]
+                            input_state[incremental_state_key][state_comp_idx][k]=state_comp_dict[k]
             else:
                 decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
         else:

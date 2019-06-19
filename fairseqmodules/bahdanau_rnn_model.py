@@ -116,6 +116,157 @@ class BahdanauRNNModel(LSTMModel):
         r= cls(encoder, decoder)
         return r
 
+@register_model('bahdanau_rnn_two_decoders_async')
+class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
+    def __init__(self, encoder, decoder, decoder_b):
+        BaseFairseqModel.__init__(self)
+        self.encoder = encoder
+        self.decoder = decoder
+        self.decoder_b = decoder_b
+        assert isinstance(self.encoder, FairseqEncoder)
+        assert isinstance(self.decoder, GRUDecoderTwoInputs)
+        assert isinstance(self.decoder_b, GRUDecoder)
+
+    @classmethod
+    def build_model(cls, args, task):
+        """Build a new model instance.
+        Encoders and decoders now are GRUs. Initialization of hidden state
+        and output layers similar to Nematus
+         """
+        # make sure that all args are properly defaulted (in case there are any new ones)
+        base_architecture(args)
+
+        if args.encoder_layers != args.decoder_layers:
+            raise ValueError('--encoder-layers must match --decoder-layers')
+
+        def load_pretrained_embedding_from_file(embed_path, dictionary, embed_dim):
+            num_embeddings = len(dictionary)
+            padding_idx = dictionary.pad()
+            embed_tokens = Embedding(num_embeddings, embed_dim, padding_idx)
+            embed_dict = utils.parse_embedding(embed_path)
+            utils.print_embed_overlap(embed_dict, dictionary)
+            return utils.load_embedding(embed_dict, dictionary, embed_tokens)
+
+        if args.encoder_embed_path:
+            pretrained_encoder_embed = load_pretrained_embedding_from_file(
+                args.encoder_embed_path, task.source_dictionary, args.encoder_embed_dim)
+        else:
+            num_embeddings = len(task.source_dictionary)
+            pretrained_encoder_embed = Embedding(
+                num_embeddings, args.encoder_embed_dim, task.source_dictionary.pad()
+            )
+
+        if args.share_all_embeddings:
+            # double check all parameters combinations are valid
+            if task.source_dictionary != task.target_dictionary:
+                raise ValueError('--share-all-embeddings requires a joint dictionary')
+            if args.decoder_embed_path and (
+                    args.decoder_embed_path != args.encoder_embed_path):
+                raise ValueError(
+                    '--share-all-embed not compatible with --decoder-embed-path'
+                )
+            if args.encoder_embed_dim != args.decoder_embed_dim:
+                raise ValueError(
+                    '--share-all-embeddings requires --encoder-embed-dim to '
+                    'match --decoder-embed-dim'
+                )
+            pretrained_decoder_embed = pretrained_encoder_embed
+            args.share_decoder_input_output_embed = True
+        else:
+            # separate decoder input embeddings
+            pretrained_decoder_embed = None
+            if args.decoder_embed_path:
+                pretrained_decoder_embed = load_pretrained_embedding_from_file(
+                    args.decoder_embed_path,
+                    task.target_dictionary,
+                    args.decoder_embed_dim
+                )
+        # one last double check of parameter combinations
+        if args.share_decoder_input_output_embed and (
+                args.decoder_embed_dim != args.decoder_out_embed_dim):
+            raise ValueError(
+                '--share-decoder-input-output-embeddings requires '
+                '--decoder-embed-dim to match --decoder-out-embed-dim'
+            )
+
+        if args.encoder_freeze_embed:
+            pretrained_encoder_embed.weight.requires_grad = False
+        if args.decoder_freeze_embed:
+            pretrained_decoder_embed.weight.requires_grad = False
+
+        encoder = GRUEncoder(
+            dictionary=task.source_dictionary,
+            embed_dim=args.encoder_embed_dim,
+            hidden_size=args.encoder_hidden_size,
+            num_layers=args.encoder_layers,
+            dropout_in=args.encoder_dropout_in,
+            dropout_out=args.encoder_dropout_out,
+            bidirectional=args.encoder_bidirectional,
+            pretrained_embed=pretrained_encoder_embed,
+        )
+
+        decoder = GRUDecoderTwoInputs(
+            dictionary=task.target_dictionary,
+            dictionary_b=task.target_factors_dictionary,
+            embed_dim=args.decoder_embed_dim,
+            hidden_size=args.decoder_hidden_size,
+            out_embed_dim=args.decoder_out_embed_dim,
+            num_layers=args.decoder_layers,
+            dropout_in=args.decoder_dropout_in,
+            dropout_out=args.decoder_dropout_out,
+            attention=options.eval_bool(args.decoder_attention),
+            encoder_output_units=encoder.output_units,
+            pretrained_embed=pretrained_decoder_embed,
+            share_input_output_embed=args.share_decoder_input_output_embed,
+            adaptive_softmax_cutoff=(
+                options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                if args.criterion == 'adaptive_loss' else None
+            ),
+        )
+
+        decoder_b = GRUDecoder(
+            dictionary=task.target_factors_dictionary,
+            embed_dim=args.decoder_embed_dim,
+            hidden_size=args.decoder_hidden_size,
+            out_embed_dim=args.decoder_out_embed_dim,
+            num_layers=args.decoder_layers,
+            dropout_in=args.decoder_dropout_in,
+            dropout_out=args.decoder_dropout_out,
+            attention=options.eval_bool(args.decoder_attention),
+            encoder_output_units=encoder.output_units,
+            pretrained_embed=pretrained_decoder_embed,
+            share_input_output_embed=args.share_decoder_input_output_embed,
+            adaptive_softmax_cutoff=(
+                options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                if args.criterion == 'adaptive_loss' else None
+            ),
+        )
+        r= cls(encoder, decoder, decoder_b)
+        return r
+
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors):
+        """
+        Run the forward pass for an encoder-decoder model.
+        First feed a batch of source tokens through the encoder. Then, feed the
+        encoder output and previous decoder outputs (i.e., input feeding/teacher
+        forcing) to the decoder to produce the next outputs::
+            encoder_out = self.encoder(src_tokens, src_lengths)
+            return self.decoder(prev_output_tokens, encoder_out)
+        Args:
+            src_tokens (LongTensor): tokens in the source language of shape
+                `(batch, src_len)`
+            src_lengths (LongTensor): source sentence lengths of shape `(batch)`
+            prev_output_tokens (LongTensor): previous decoder outputs of shape
+                `(batch, tgt_len)`, for input feeding/teacher forcing
+        Returns:
+            the decoder's output, typically of shape `(batch, tgt_len, vocab)`
+        """
+        #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
+        encoder_out = self.encoder(src_tokens, src_lengths)
+        decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
+        decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_out)
+        return decoder_out, decoder_b_out
+
 
 class GRUEncoder(FairseqEncoder):
     """GRU encoder."""
@@ -495,6 +646,238 @@ class GRUDecoder(FairseqIncrementalDecoder):
 
     def make_generation_fast_(self, need_attn=False, **kwargs):
         self.need_attn = need_attn
+
+
+class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
+    """GRU decoder."""
+    def __init__(
+        self, dictionary,dictionary_b, embed_dim=512, hidden_size=512, out_embed_dim=512,
+        num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
+        encoder_output_units=512, pretrained_embed=None,
+        share_input_output_embed=False, adaptive_softmax_cutoff=None,
+    ):
+        super().__init__(dictionary)
+        self.dropout_in = dropout_in
+        self.dropout_out = dropout_out
+        self.hidden_size = hidden_size
+        self.share_input_output_embed = share_input_output_embed
+        self.need_attn = True
+
+        self.adaptive_softmax = None
+        num_embeddings = len(dictionary)
+        num_embeddings_b=len(dictionary_b)
+        padding_idx = dictionary.pad()
+        padding_idx_b = dictionary_b.pad()
+
+        #At the moment, both embeddings have the same size
+        self.embed_tokens_b=Embedding(num_embeddings_b, embed_dim, padding_idx_b)
+
+        if pretrained_embed is None:
+            self.embed_tokens = Embedding(num_embeddings, embed_dim, padding_idx)
+        else:
+            self.embed_tokens = pretrained_embed
+
+        self.encoder_output_units = encoder_output_units
+
+        #linear + tanh for initial state
+        #TODO: we are assuming encoder is always bidirectional
+        #TODO: Linear ignores dropout!!
+        self.linear_initial_state=Linear(encoder_output_units,hidden_size,dropout=dropout_in)
+        self.activ_initial_state=nn.Tanh()
+
+        #TODO: should we apply droput here?
+        self.layers = nn.ModuleList([
+            # LSTM used custom initialization here
+            nn.GRUCell(
+                input_size=encoder_output_units + embed_dim*2 if layer == 0 else hidden_size,
+                hidden_size=hidden_size,
+            )
+            for layer in range(num_layers)
+        ])
+        if attention:
+            # TODO make bias configurable
+            self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, dropout=dropout_out)#bias = True like Bahdanau
+        else:
+            self.attention = None
+
+
+        #Deep output
+        self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
+        self.logit_prev=Linear(embed_dim*2, out_embed_dim, dropout=dropout_out)
+        self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
+        self.activ_deep_output=nn.Tanh()
+
+        if adaptive_softmax_cutoff is not None:
+            # setting adaptive_softmax dropout to dropout_out for now but can be redefined
+            self.adaptive_softmax = AdaptiveSoftmax(num_embeddings, embed_dim, adaptive_softmax_cutoff,
+                                                    dropout=dropout_out)
+        elif not self.share_input_output_embed:
+            self.fc_out = Linear(out_embed_dim, num_embeddings, dropout=dropout_out)
+
+    def forward(self, prev_output_tokens,prev_output_tokens_b, encoder_out_dict, incremental_state=None):
+        encoder_out = encoder_out_dict['encoder_out']
+        encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
+
+        #print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
+        #print("encoder_padding_mask: {}".format(encoder_padding_mask))
+
+        if incremental_state is not None:
+            prev_output_tokens = prev_output_tokens[:, -1:]
+        bsz, seqlen = prev_output_tokens.size()
+
+        # get outputs from encoder
+        encoder_outs, encoder_hiddens = encoder_out[:2]
+        srclen = encoder_outs.size(0)
+
+        # embed tokens
+        x = self.embed_tokens(prev_output_tokens)
+        x = F.dropout(x, p=self.dropout_in, training=self.training)
+
+        #embed additional tokens
+        x_b=self.embed_tokens_b(prev_output_tokens_b)
+        x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
+
+        #Concatenate both
+        x=torch.cat((x, x_b), dim=2)
+
+        #bsz x seqlen x hidden_size
+        logit_prev_input=x
+
+        # B x T x C -> T x B x C
+        x = x.transpose(0, 1)
+
+        # initialize previous states (or get from cache during incremental generation)
+        cached_state = utils.get_incremental_state(self, incremental_state, 'cached_state')
+        if cached_state is not None:
+            prev_hiddens = cached_state
+        else:
+            num_layers = len(self.layers)
+
+            #Copy initialization from Nematus:
+            # - Concatenate layers: IMPOSSIBLE, we only have access to last layer
+            # - Average over time
+            # - Apply FF + tanh
+
+            #shape of encoder_outs: (seq_len,bsz,num_directions*hidden_size)
+            # shape of encoder_padding_mask: (seq_len,bsz)
+            # shape of division: (bsz,num_directions*hidden_size)/ (bsz): we add unsqueeze(1) to make dimensions match
+            #print("encoder_outs: {}".format(encoder_outs))
+            #print("encoder_padding_mask: {}".format(encoder_padding_mask))
+            avg_states_num=torch.sum(encoder_outs,0)
+            avg_states_denom=encoder_outs.size(0) -  torch.sum(encoder_padding_mask,0).unsqueeze(1).type_as(encoder_outs) if encoder_padding_mask is not None else encoder_outs.size(0)
+
+            avg_states=torch.div( avg_states_num , avg_states_denom  )
+
+            #print("avg_states_num({}): {}".format(avg_states_num.size(),avg_states_num))
+            #print("avg_states_denom({}): {}".format(avg_states_denom.size() if not isinstance(avg_states_denom,int) else 0,avg_states_denom))
+            #print("avg_states({}): {}".format(avg_states.size(),avg_states))
+
+            #shape: (bsz,num_directions*hidden_size)
+            hidden=self.activ_initial_state(self.linear_initial_state(avg_states))
+            #shape: (bsz,decoder_hidden_size)
+
+            #TODO: All layers have the same initial state: problematic!!!!
+            prev_hiddens=[hidden for i in range(num_layers)]
+
+        attn_scores = x.new_zeros(srclen, seqlen, bsz)
+        outs = []
+        context_vectors=[]
+
+        if self.attention is not None:
+            #Precompute masked source hidden states
+            precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs)
+
+        for j in range(seqlen):
+            # apply attention using the last layer's hidden state
+            if self.attention is not None:
+                context_vector, attn_scores[:, j, :] = self.attention(hidden, precomputed_masked, encoder_padding_mask)
+            else:
+                context_vector = encoder_outs[0] #TODO: it should be the last state
+            context_vectors.append(context_vector)
+
+            #TODO: apply this dropout?
+            #out = F.dropout(out, p=self.dropout_out, training=self.training)
+
+            # input to GRU: concatenate context vector and input embeddings
+            input = torch.cat((x[j, :, :], context_vector), dim=1)
+
+            for i, rnn in enumerate(self.layers):
+                #TODO: think about dropout
+                # recurrent cell:
+                hidden = rnn(input, prev_hiddens[i])
+
+                # hidden state becomes the input to the next layer
+                #input = F.dropout(hidden, p=self.dropout_out, training=self.training)
+                #This is not needed anymore: input feeding is disabled in Bahdanau
+
+                # save state for next time step
+                prev_hiddens[i] = hidden
+
+            out = F.dropout(hidden, p=self.dropout_out, training=self.training)
+
+            # save final output
+            outs.append(out)
+
+        # cache previous states (no-op except during incremental generation)
+        utils.set_incremental_state(
+            self, incremental_state, 'cached_state',
+            prev_hiddens,
+        )
+
+        # collect outputs across time steps
+        x = torch.cat(outs, dim=0).view(seqlen, bsz, self.hidden_size)
+
+        # T x B x C -> B x T x C
+        x = x.transpose(1, 0)
+        #x: bsz x seqlen x hidden_size
+
+        # srclen x tgtlen x bsz -> bsz x tgtlen x srclen
+        if not self.training and self.need_attn:
+            attn_scores = attn_scores.transpose(0, 2)
+        else:
+            attn_scores = None
+
+        #deep output like nematus
+        logit_ctx_out=self.logit_ctx( torch.stack(context_vectors).transpose(0,1)  )
+        logit_prev_out=self.logit_prev(logit_prev_input)
+        logit_lstm_out=self.logit_lstm(x)
+
+        x=self.activ_deep_output(logit_ctx_out + logit_prev_out + logit_lstm_out )
+
+        # project back to size of vocabulary
+        if self.adaptive_softmax is None:
+            if hasattr(self, 'additional_fc'):
+                x = self.additional_fc(x)
+                x = F.dropout(x, p=self.dropout_out, training=self.training)
+            if self.share_input_output_embed:
+                x = F.linear(x, self.embed_tokens.weight)
+            else:
+                x = self.fc_out(x)
+
+        #print("Forward pass.\nx({}):{}\nattn_scores:{}".format(x.size(),x,attn_scores))
+        return x, attn_scores
+
+    def reorder_incremental_state(self, incremental_state, new_order):
+        super().reorder_incremental_state(incremental_state, new_order)
+        cached_state = utils.get_incremental_state(self, incremental_state, 'cached_state')
+        if cached_state is None:
+            return
+
+        def reorder_state(state):
+            if isinstance(state, list):
+                return [reorder_state(state_i) for state_i in state]
+            return state.index_select(0, new_order)
+
+        new_state = tuple(map(reorder_state, cached_state))
+        utils.set_incremental_state(self, incremental_state, 'cached_state', new_state)
+
+    def max_positions(self):
+        """Maximum output length supported by the decoder."""
+        return int(1e5)  # an arbitrary large number
+
+    def make_generation_fast_(self, need_attn=False, **kwargs):
+        self.need_attn = need_attn
+
 
 def Linear(in_features, out_features, bias=True, dropout=0):
     """Linear layer (input: N x T x C)"""
