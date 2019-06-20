@@ -728,6 +728,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]
+            prev_output_tokens_b=prev_output_tokens_b[:, -1:]
         bsz, seqlen = prev_output_tokens.size()
 
         # get outputs from encoder
@@ -743,7 +744,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
 
         #Concatenate both
-        x=torch.cat((x, x_b), dim=2)
+        x=torch.cat((x, x_b), dim=-1)
 
         #bsz x seqlen x hidden_size
         logit_prev_input=x
@@ -788,6 +789,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         outs = []
         context_vectors=[]
 
+        prev_hiddens=list(prev_hiddens)
         if self.attention is not None:
             #Precompute masked source hidden states
             precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs) if self.training else encoder_outs
@@ -795,7 +797,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         for j in range(seqlen):
             # apply attention using the last layer's hidden state
             if self.attention is not None:
-                context_vector, attn_scores[:, j, :] = self.attention(hidden, precomputed_masked, encoder_padding_mask)
+                context_vector, attn_scores[:, j, :] = self.attention(prev_hiddens[-1], precomputed_masked, encoder_padding_mask)
             else:
                 context_vector = encoder_outs[0] #TODO: it should be the last state
             context_vectors.append(context_vector)
