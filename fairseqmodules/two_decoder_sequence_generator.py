@@ -261,6 +261,10 @@ class TwoDecoderSequenceGenerator(object):
 
             # normalize sentence-level scores
             if self.normalize_scores:
+                if TwoDecoderSequenceGenerator.DEBUG:
+                    print("Normalizing scores in async setup. eos_scores: {} step +1: {}".format(eos_scores,step + 1))
+                    print("pos_scores: {}".format(pos_scores))
+
                 if model.async:
                     # If we are in async set-up, we normalize independently the surface form
                     # and the additional tag channels
@@ -270,18 +274,16 @@ class TwoDecoderSequenceGenerator(object):
                     pos_scores_tags=pos_scores[:,0::2]
 
                     #If the number of scores is odd, there is one additional tag
-                    num_sf=(step+1)/2
-                    num_tags_pre=[ (step+1)-num_sf for i in range(eos_scores.numel())
+                    num_sf=(step+1)//2
+                    num_tags_pre=[ (step+1)-num_sf for i in range(eos_scores.numel()) ]
 
                     #substract from numtags the number of non-end surface forms for each hypothesis
                     tokens_sf=tokens_clone[:,1::2]
                     num_non_end=[  len( [ t for t in r if self.tgt_dict[t].endswith("@@")  ]  )  for r in tokens_clone ]
-                    num_tags = num_tags_pre-num_non_end
+                    num_tags = torch.tensor(num_tags_pre,dtype=pos_scores.dtype,device=pos_scores.device)-torch.tensor(num_non_end,dtype=pos_scores.dtype,device=pos_scores.device)
 
-                    eos_scores=  torch.sum(pos_scores_sf,-1)/num_sf**self.len_penalty + torch.sum(pos_scores_tags)/num_tags**self.len_penalty
+                    eos_scores=  torch.sum(pos_scores_sf,-1)/num_sf**self.len_penalty + torch.sum(pos_scores_tags,-1)/num_tags**self.len_penalty
                     if TwoDecoderSequenceGenerator.DEBUG:
-                        print("Normalizing scores in async setup. eos_scores: {} step +1: {}".format(eos_scores,step + 1))
-                        print("pos_scores: {}".format(pos_scores))
                         print("pos_scores_sf: {}".format(pos_scores_sf))
                         print("pos_scores_tags: {}".format(pos_scores_tags))
                         print("num_sf: {}".format(num_sf))
@@ -291,9 +293,6 @@ class TwoDecoderSequenceGenerator(object):
                         print("Final eos_scores: {}".format(eos_scores))
 
                 else:
-                    if TwoDecoderSequenceGenerator.DEBUG:
-                        print("Normalizing scores. eos_scores: {} step +1: {}".format(eos_scores,step + 1))
-                        print("pos_scores: {}".format(pos_scores))
                     eos_scores /= (step + 1) ** self.len_penalty
 
             cum_unfin = []
