@@ -15,7 +15,7 @@ from fairseq.models import FairseqIncrementalDecoder
 from . import lstm_two_decoders_async_model,bahdanau_rnn_model
 
 class TwoDecoderSequenceGenerator(object):
-    DEBUG=False
+    DEBUG=True
     def __init__(
         self,
         tgt_dict,
@@ -261,6 +261,9 @@ class TwoDecoderSequenceGenerator(object):
 
             # normalize sentence-level scores
             if self.normalize_scores:
+                if TwoDecoderSequenceGenerator.DEBUG:
+                    print("Normalizing scores. eos_scores: {} step +1: {}".format(eos_scores,step + 1))
+                    print("pos_scores: {}".format(pos_scores))
                 eos_scores /= (step + 1) ** self.len_penalty
 
             cum_unfin = []
@@ -599,6 +602,10 @@ class TwoDecoderSequenceGenerator(object):
         # sort by score descending
         for sent in range(len(finalized)):
             finalized[sent] = sorted(finalized[sent], key=lambda r: r['score'], reverse=True)
+
+            #Print linguistic factors
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print( self.tgt_dict_b.string( finalized[sent][0]['tags']  ))
 
         #Remove linguistic factors before returning
         return finalized
