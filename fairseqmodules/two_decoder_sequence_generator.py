@@ -14,9 +14,10 @@ from fairseq.models import FairseqIncrementalDecoder
 
 from . import lstm_two_decoders_async_model,bahdanau_rnn_model
 
-class TwoDecoderAsyncBeamSearch(Search):
+class TwoDecoderAsyncBeamSearch(search.Search):
     def __init__(self, tgt_dict):
         super().__init__(tgt_dict)
+        self.tgt_dict=tgt_dict
 
     def step(self, step, lprobs, scores,tokens,sf_dict):
         super()._init_buffers(lprobs)
@@ -45,8 +46,8 @@ class TwoDecoderAsyncBeamSearch(Search):
 
             # convert from cumulative to per-position scores
             pos_scores[:,:, 1:] = pos_scores[:,:, 1:] - pos_scores[:,:, :-1]
-            pos_scores_sf=pos_scores[:,1::2]
-            pos_scores_tags=pos_scores[:,0::2]
+            pos_scores_sf=pos_scores[:,:,1::2]
+            pos_scores_tags=pos_scores[:,:,0::2]
 
             #If the number of scores is odd, there is one additional tag
             num_sf=(step+1)//2
@@ -65,13 +66,13 @@ class TwoDecoderAsyncBeamSearch(Search):
 
             #substract from numtags the number of non-end surface forms for each hypothesis
             tokens_sf=tokens[:,:,1::2]
-            num_non_end=[ [ [ len( [ t for t in c if sf_dict[t].endswith("@@")  ]  )  ]  for c in r]   for r in tokens_sf ]
+            num_non_end=[      [  len( [ t for t in c if sf_dict[t].endswith("@@")  ]  )    for c in r]   for r in tokens_sf ]
 
             num_tags = torch.tensor(num_tags_pre,dtype=pos_scores.dtype,device=pos_scores.device)-torch.tensor(num_non_end,dtype=pos_scores.dtype,device=pos_scores.device)
 
             if TwoDecoderSequenceGenerator.DEBUG:
                 print("Doing a beam search step")
-                print("lprobs: {}".format(lprobs))
+                print("lprobs ({}): {}".format(lprobs.size(),lprobs))
 
             lprobs_add_sf=0.0
             lprobs_add_tags=0.0
@@ -79,17 +80,29 @@ class TwoDecoderAsyncBeamSearch(Search):
                 lprobs_add_sf=lprobs
             else:
                 lprobs_add_tags=lprobs
-            lprobs=  (torch.sum(pos_scores_sf,-1) + lprobs_add_sf )/num_sf + (torch.sum(pos_scores_tags,-1) + lprobs_add_tags )/num_tags
 
             if TwoDecoderSequenceGenerator.DEBUG:
-                print("pos_scores: {}".format(pos_scores_sf))
-                print("pos_scores_sf: {}".format(pos_scores_sf))
-                print("pos_scores_tags: {}".format(pos_scores_tags))
+                print("pos_scores ({}): {}".format(pos_scores.size(),pos_scores))
+                print("pos_scores_sf ({}): {}".format(pos_scores_sf.size(),pos_scores_sf))
+                print("pos_scores_tags ({}): {}".format(pos_scores_tags.size(),pos_scores_tags))
                 print("num_sf: {}".format(num_sf))
+                print("tokens_sf ({}): {}".format(tokens_sf.size(),tokens_sf))
                 print("num_tags_pre: {}".format(num_tags_pre))
                 print("num_non_end: {}".format(num_non_end))
-                print("num_tags: {}".format(num_tags))
-                print("Final eos_scores: {}".format(eos_scores))
+                print("num_tags  ({}): {}".format(num_tags.size(),num_tags)) 
+                print("torch.sum(pos_scores_sf,-1).unsqueeze(1):{}".format(torch.sum(pos_scores_sf,-1).unsqueeze(-1).size()))
+
+            lprobs_a=  (torch.sum(pos_scores_sf,-1).unsqueeze(-1) + lprobs_add_sf )/num_sf
+            lprobs_b= (torch.sum(pos_scores_tags,-1).unsqueeze(-1) + lprobs_add_tags )/num_tags.unsqueeze(-1)
+
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print("lprobs_a ({}): {}".format(lprobs_a.size(),lprobs_a))
+                print("lprobs_b ({}): {}".format(lprobs_b.size(),lprobs_b))
+
+            lprobs=  lprobs_a + lprobs_b
+
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print("Final lprobs: {}".format(lprobs))
 
         torch.topk(
             #With view, we rearrange the original lprobs, which now has size=( bsz,  input_beam_size x vocab_size), i.e.,
@@ -200,8 +213,8 @@ class TwoDecoderSequenceGenerator(object):
             )
         else:
             #TODO: only if async
-            self.search = search.TwoDecoderAsyncBeamSearch(tgt_dict)
-            self.search_b = search.TwoDecoderAsyncBeamSearch(tgt_dict_b)
+            self.search = TwoDecoderAsyncBeamSearch(tgt_dict)
+            self.search_b = TwoDecoderAsyncBeamSearch(tgt_dict_b)
 
     @torch.no_grad()
     def generate(
@@ -573,7 +586,8 @@ class TwoDecoderSequenceGenerator(object):
                         step,
                         lprobs.view(bsz, -1, my_vocab_size),
                         scores.view(bsz, beam_size, -1)[:, :, :step],
-                        tokens.view(bsz, beam_size, -1)[:, :step + 2],
+                        tokens.view(bsz, beam_size, -1)[:,:, :step + 2],
+                        self.tgt_dict
                     )
                     if TwoDecoderSequenceGenerator.DEBUG:
                         print("Result of beam search\ncand_scores:{}\ncand_indices:{}\ncand_beams:{}\n".format( cand_scores, cand_indices, cand_beams))
