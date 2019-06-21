@@ -39,7 +39,7 @@ class TwoDecoderAsyncBeamSearch(search.Search):
             unnnorm_lprobs=(lprobs +scores[:, :, step - 1].unsqueeze(-1)).view(bsz,-1)
 
             #Now the last score is at position step-1
-            pos_scores = scores[:,:, :step]
+            pos_scores = scores.clone()[:,:, :step]
 
             #I think this is not needed:
             #pos_scores[:,:, step-1] = eos_scores
@@ -117,8 +117,10 @@ class TwoDecoderAsyncBeamSearch(search.Search):
             ),
             out=(self.scores_buf, self.indices_buf), #A namedtuple of (values, indices) is returned, where the indices are the indices of the elements in the original input tensor.
         )
-        final_scores=torch.take(unnnorm_lprobs,self.indices_buf)
-        #TODO: we should return unnormalized scores!!
+        if step == 0:
+            final_scores=self.scores_buf
+        else:
+            final_scores=torch.take(unnnorm_lprobs,self.indices_buf)
         torch.div(self.indices_buf, vocab_size, out=self.beams_buf)
         self.indices_buf.fmod_(vocab_size)
         if TwoDecoderSequenceGenerator.DEBUG:
@@ -127,7 +129,7 @@ class TwoDecoderAsyncBeamSearch(search.Search):
         return final_scores, self.indices_buf, self.beams_buf
 
 class TwoDecoderSequenceGenerator(object):
-    DEBUG=True
+    DEBUG=False
     def __init__(
         self,
         tgt_dict,
