@@ -5,6 +5,18 @@ from fairseq import utils
 
 @register_criterion('label_smoothed_cross_entropy_two_decoders')
 class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCriterion):
+    def __init__(self, args, task):
+        super().__init__(args, task)
+        self.b_weight = args.b_decoder_weight
+
+    @staticmethod
+    def add_args(parser):
+        """Add criterion-specific arguments to the parser."""
+        LabelSmoothedCrossEntropyCriterion.add_args(parser)
+        # fmt: off
+        parser.add_argument('--b-decoder-weight', default=0.5, type=float,
+                            help='Weight of auxiliary decoder in the loss')
+
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
         Returns a tuple with three elements:
@@ -18,8 +30,8 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         loss_b, nll_loss_b = self.compute_loss_factors(model, net_output_b, sample, reduce=reduce)
 
         #We might have problems here when the number of TL factors is different from the number of TL tokens
-        loss=loss+loss_b
-        nll_loss=nll_loss+nll_loss_b
+        loss=loss*(1-self.b_decoder_weight)+loss_b*self.b_decoder_weight
+        nll_loss=nll_loss*(1-self.b_decoder_weight)+nll_loss_b*self.b_decoder_weight
 
         if self.args.sentence_avg:
             raise NotImplementedError

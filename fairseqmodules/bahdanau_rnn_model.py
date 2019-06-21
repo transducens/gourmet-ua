@@ -127,6 +127,15 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
         assert isinstance(self.decoder, GRUDecoderTwoInputs)
         assert isinstance(self.decoder_b, GRUDecoder)
 
+    @staticmethod
+    def add_args(parser):
+        """Add model-specific arguments to the parser."""
+        #Hack to call parent staticmethod
+        BahdanauRNNModel.add_args(parser)
+        parser.add_argument('--tags-condition-end', default=False, action='store_true',
+                            help='Tags condition surface form decoder only at the end, as in lexical model')
+
+
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance.
@@ -218,6 +227,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
+            b_condition_end=args.tags_condition_end,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -659,7 +669,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self, dictionary,dictionary_b, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None,
-        share_input_output_embed=False, adaptive_softmax_cutoff=None,
+        share_input_output_embed=False, b_condition_end=False , adaptive_softmax_cutoff=None,
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
@@ -667,6 +677,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.hidden_size = hidden_size
         self.share_input_output_embed = share_input_output_embed
         self.need_attn = True
+
+        self.b_condition_end = b_condition_end
 
         self.adaptive_softmax = None
         num_embeddings = len(dictionary)
@@ -694,7 +706,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.layers = nn.ModuleList([
             # LSTM used custom initialization here
             nn.GRUCell(
-                input_size=encoder_output_units + embed_dim*2 if layer == 0 else hidden_size,
+                input_size=( (encoder_output_units + embed_dim*2) if not self.b_condition_end else (encoder_output_units + embed_dim) ) if layer == 0 else hidden_size,
                 hidden_size=hidden_size,
             )
             for layer in range(num_layers)
@@ -708,7 +720,9 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
-        self.logit_prev=Linear(embed_dim*2, out_embed_dim, dropout=dropout_out)
+        self.logit_prev=Linear(embed_dim*2 if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
+        if self.b_condition_end:
+            self.logit_tag = Linear(embed_dim, out_embed_dim, dropout=dropout_out)
         self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
         self.activ_deep_output=nn.Tanh()
 
@@ -742,9 +756,11 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         #embed additional tokens
         x_b=self.embed_tokens_b(prev_output_tokens_b)
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
+        logit_tag_input=x_b
 
         #Concatenate both
-        x=torch.cat((x, x_b), dim=-1)
+        if not self.b_condition_end:
+            x=torch.cat((x, x_b), dim=-1)
 
         #bsz x seqlen x hidden_size
         logit_prev_input=x
@@ -847,9 +863,14 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         #deep output like nematus
         logit_ctx_out=self.logit_ctx( torch.stack(context_vectors).transpose(0,1)  )
         logit_prev_out=self.logit_prev(logit_prev_input)
+        if self.b_condition_end:
+            logit_tag_out=self.logit_tag(logit_tag_input)
         logit_lstm_out=self.logit_lstm(x)
 
-        x=self.activ_deep_output(logit_ctx_out + logit_prev_out + logit_lstm_out )
+        if self.b_condition_end:
+            x=self.activ_deep_output(logit_ctx_out + logit_prev_out + logit_lstm_out + logit_tag_out)
+        else:
+            x=self.activ_deep_output(logit_ctx_out + logit_prev_out + logit_lstm_out )
 
         # project back to size of vocabulary
         if self.adaptive_softmax is None:
