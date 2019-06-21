@@ -14,6 +14,100 @@ from fairseq.models import FairseqIncrementalDecoder
 
 from . import lstm_two_decoders_async_model,bahdanau_rnn_model
 
+class TwoDecoderAsyncBeamSearch(Search):
+    def __init__(self, tgt_dict):
+        super().__init__(tgt_dict)
+
+    def step(self, step, lprobs, scores,tokens,sf_dict):
+        super()._init_buffers(lprobs)
+        bsz, beam_size, vocab_size = lprobs.size()
+
+        if step == 0:
+            # at the first step all hypotheses are equally likely, so use
+            # only the first beam
+            lprobs = lprobs[:, ::beam_size, :].contiguous()
+        else:
+            # make probs contain cumulative scores for each hypothesis
+            #TODO: we need to re-compute and normalize after this step
+
+            #lprobs:(bsz x input_beam_size x vocab_size)
+            #scores: (bsz x input_beam_size x step)
+            #tokens: (bsz x input_beam_size x step)
+            # scores are expanded so that the same score is added to all probs
+
+            #lprobs.add_(scores[:, :, step - 1].unsqueeze(-1))
+
+            #Now the last score is at position step-1
+            pos_scores = scores[:,:, :step]
+
+            #I think this is not needed:
+            #pos_scores[:,:, step-1] = eos_scores
+
+            # convert from cumulative to per-position scores
+            pos_scores[:,:, 1:] = pos_scores[:,:, 1:] - pos_scores[:,:, :-1]
+            pos_scores_sf=pos_scores[:,1::2]
+            pos_scores_tags=pos_scores[:,0::2]
+
+            #If the number of scores is odd, there is one additional tag
+            num_sf=(step+1)//2
+
+            #TODO: 2 dimension and broadcasting
+            num_tags_pre_single=(step+1)-num_sf
+            num_tags_pre= [ [ num_tags_pre_single for j in range(lprobs.size(1)) ] for i in range(lprobs.size(0)) ]
+
+            #how does it change when we are in a tag step or on a sf step
+            #how does it change when we are in a tag step with forced output?
+            #
+            #if we are in a tag step, and the last sf ends with @@: we do not take into account current tag
+            # "                                       does not end with @@: we take into account current tag
+            # if we are in a sf step: is the number of tags affected by the chosen sf? NO -> we can copy algorithm
+            # from normalization
+
+            #substract from numtags the number of non-end surface forms for each hypothesis
+            tokens_sf=tokens[:,:,1::2]
+            num_non_end=[ [ [ len( [ t for t in c if sf_dict[t].endswith("@@")  ]  )  ]  for c in r]   for r in tokens_sf ]
+
+            num_tags = torch.tensor(num_tags_pre,dtype=pos_scores.dtype,device=pos_scores.device)-torch.tensor(num_non_end,dtype=pos_scores.dtype,device=pos_scores.device)
+
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print("Doing a beam search step")
+                print("lprobs: {}".format(lprobs))
+
+            lprobs_add_sf=0.0
+            lprobs_add_tags=0.0
+            if self.tgt_dict == sf_dict:
+                lprobs_add_sf=lprobs
+            else:
+                lprobs_add_tags=lprobs
+            lprobs=  (torch.sum(pos_scores_sf,-1) + lprobs_add_sf )/num_sf + (torch.sum(pos_scores_tags,-1) + lprobs_add_tags )/num_tags
+
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print("pos_scores: {}".format(pos_scores_sf))
+                print("pos_scores_sf: {}".format(pos_scores_sf))
+                print("pos_scores_tags: {}".format(pos_scores_tags))
+                print("num_sf: {}".format(num_sf))
+                print("num_tags_pre: {}".format(num_tags_pre))
+                print("num_non_end: {}".format(num_non_end))
+                print("num_tags: {}".format(num_tags))
+                print("Final eos_scores: {}".format(eos_scores))
+
+        torch.topk(
+            #With view, we rearrange the original lprobs, which now has size=( bsz,  input_beam_size x vocab_size), i.e.,
+            #we mix all the scores (coming from different hypotheses) for each batch element
+            #And topk computes the highest scores for each batch element
+            lprobs.view(bsz, -1),
+            k=min(
+                # Take the best 2 x beam_size predictions. We'll choose the first
+                # beam_size of these which don't predict eos to continue with.
+                beam_size * 2,
+                lprobs.view(bsz, -1).size(1) - 1,  # -1 so we never select pad
+            ),
+            out=(self.scores_buf, self.indices_buf), #A namedtuple of (values, indices) is returned, where the indices are the indices of the elements in the original input tensor.
+        )
+        torch.div(self.indices_buf, vocab_size, out=self.beams_buf)
+        self.indices_buf.fmod_(vocab_size)
+        return self.scores_buf, self.indices_buf, self.beams_buf
+
 class TwoDecoderSequenceGenerator(object):
     DEBUG=True
     def __init__(
@@ -105,8 +199,9 @@ class TwoDecoderSequenceGenerator(object):
                 tgt_dict, min_len_a=1, min_len_b=0, max_len_a=1, max_len_b=0,
             )
         else:
-            self.search = search.BeamSearch(tgt_dict)
-            self.search_b = search.BeamSearch(tgt_dict_b)
+            #TODO: only if async
+            self.search = search.TwoDecoderAsyncBeamSearch(tgt_dict)
+            self.search_b = search.TwoDecoderAsyncBeamSearch(tgt_dict_b)
 
     @torch.no_grad()
     def generate(
@@ -279,7 +374,7 @@ class TwoDecoderSequenceGenerator(object):
 
                     #substract from numtags the number of non-end surface forms for each hypothesis
                     tokens_sf=tokens_clone[:,1::2]
-                    num_non_end=[  len( [ t for t in r if self.tgt_dict[t].endswith("@@")  ]  )  for r in tokens_clone ]
+                    num_non_end=[  len( [ t for t in r if self.tgt_dict[t].endswith("@@")  ]  )  for r in tokens_sf ]
                     num_tags = torch.tensor(num_tags_pre,dtype=pos_scores.dtype,device=pos_scores.device)-torch.tensor(num_non_end,dtype=pos_scores.dtype,device=pos_scores.device)
 
                     eos_scores=  torch.sum(pos_scores_sf,-1)/num_sf**self.len_penalty + torch.sum(pos_scores_tags,-1)/num_tags**self.len_penalty
@@ -478,6 +573,7 @@ class TwoDecoderSequenceGenerator(object):
                         step,
                         lprobs.view(bsz, -1, my_vocab_size),
                         scores.view(bsz, beam_size, -1)[:, :, :step],
+                        tokens.view(bsz, beam_size, -1)[:, :step + 2],
                     )
                     if TwoDecoderSequenceGenerator.DEBUG:
                         print("Result of beam search\ncand_scores:{}\ncand_indices:{}\ncand_beams:{}\n".format( cand_scores, cand_indices, cand_beams))
@@ -792,7 +888,7 @@ class EnsembleModel(torch.nn.Module):
             if is_dummy:
                 #Force decoder to produce the same tag
                 probs[i][:]=-math.inf
-                probs[i][ tokens_in_a[i][-1]  ]=last_scores[i]
+                probs[i][ tokens_in_a[i][-1]  ]=0.0#last_scores[i]
         return probs, attn
 
     def reorder_encoder_out(self, encoder_outs, new_order):
