@@ -36,7 +36,7 @@ class TwoDecoderAsyncBeamSearch(search.Search):
             #tokens: (bsz x input_beam_size x step)
             # scores are expanded so that the same score is added to all probs
 
-            #lprobs.add_(scores[:, :, step - 1].unsqueeze(-1))
+            unnnorm_lprobs=(lprobs +scores[:, :, step - 1].unsqueeze(-1)).view(bsz,-1)
 
             #Now the last score is at position step-1
             pos_scores = scores[:,:, :step]
@@ -89,7 +89,7 @@ class TwoDecoderAsyncBeamSearch(search.Search):
                 print("tokens_sf ({}): {}".format(tokens_sf.size(),tokens_sf))
                 print("num_tags_pre: {}".format(num_tags_pre))
                 print("num_non_end: {}".format(num_non_end))
-                print("num_tags  ({}): {}".format(num_tags.size(),num_tags)) 
+                print("num_tags  ({}): {}".format(num_tags.size(),num_tags))
                 print("torch.sum(pos_scores_sf,-1).unsqueeze(1):{}".format(torch.sum(pos_scores_sf,-1).unsqueeze(-1).size()))
 
             lprobs_a=  (torch.sum(pos_scores_sf,-1).unsqueeze(-1) + lprobs_add_sf )/num_sf
@@ -117,9 +117,14 @@ class TwoDecoderAsyncBeamSearch(search.Search):
             ),
             out=(self.scores_buf, self.indices_buf), #A namedtuple of (values, indices) is returned, where the indices are the indices of the elements in the original input tensor.
         )
+        final_scores=torch.take(unnnorm_lprobs,self.indices_buf)
+        #TODO: we should return unnormalized scores!!
         torch.div(self.indices_buf, vocab_size, out=self.beams_buf)
         self.indices_buf.fmod_(vocab_size)
-        return self.scores_buf, self.indices_buf, self.beams_buf
+        if TwoDecoderSequenceGenerator.DEBUG:
+            print("scores_buf: {}".format(self.scores_buf))
+            print("final_scores: {}".format(final_scores))
+        return final_scores, self.indices_buf, self.beams_buf
 
 class TwoDecoderSequenceGenerator(object):
     DEBUG=True
