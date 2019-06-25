@@ -30,8 +30,8 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         loss_b, nll_loss_b = self.compute_loss_factors(model, net_output_b, sample, reduce=reduce)
 
         #We might have problems here when the number of TL factors is different from the number of TL tokens
-        loss=loss*(1-self.b_decoder_weight)+loss_b*self.b_decoder_weight
-        nll_loss=nll_loss*(1-self.b_decoder_weight)+nll_loss_b*self.b_decoder_weight
+        loss=loss*(1-self.b_weight)+loss_b*self.b_weight
+        nll_loss=nll_loss*(1-self.b_weight)+nll_loss_b*self.b_weight
 
         if self.args.sentence_avg:
             raise NotImplementedError
