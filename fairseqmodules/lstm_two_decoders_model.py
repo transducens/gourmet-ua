@@ -13,9 +13,6 @@ from fairseq.models.lstm import LSTMModel,LSTMEncoder,LSTMDecoder,base_architect
 
 @register_model('lstm_two_decoders')
 class LSTMTwoDecodersModel(LSTMModel):
-    """
-    add_args is completely inherited
-    """
     def __init__(self, encoder, decoder, decoder_b):
         BaseFairseqModel.__init__(self)
         self.encoder = encoder
@@ -25,6 +22,13 @@ class LSTMTwoDecodersModel(LSTMModel):
         assert isinstance(self.decoder, LSTMDecoderTwoInputs)
         assert isinstance(self.decoder_b, LSTMDecoderTwoInputs)
 
+    @staticmethod
+    def add_args(parser):
+        """Add model-specific arguments to the parser."""
+        #Hack to call parent staticmethod
+        LSTMModel.add_args(parser)
+        parser.add_argument('--tags-condition-end', default=False, action='store_true',
+                            help='Tags condition surface form decoder only at the end, as in lexical model')
 
     @classmethod
     def build_model(cls, args, task):
@@ -131,6 +135,7 @@ class LSTMTwoDecodersModel(LSTMModel):
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
+            b_condition_end=args.tags_condition_end,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -170,7 +175,7 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
         self, dictionary,dictionary_b, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None,
-        share_input_output_embed=False, adaptive_softmax_cutoff=None,
+        share_input_output_embed=False,b_condition_end=False, adaptive_softmax_cutoff=None,
     ):
         """
         Copy of LSMTDecoder
@@ -184,6 +189,8 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
         self.hidden_size = hidden_size
         self.share_input_output_embed = share_input_output_embed
         self.need_attn = True
+
+        self.b_condition_end = b_condition_end
 
         self.adaptive_softmax = None
         num_embeddings = len(dictionary)
@@ -205,7 +212,7 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
             self.encoder_hidden_proj = self.encoder_cell_proj = None
         self.layers = nn.ModuleList([
             LSTMCell(
-                input_size=hidden_size + embed_dim*2 if layer == 0 else hidden_size,
+                input_size=hidden_size + (embed_dim*2 if not self.b_condition_end else embed_dim) if layer == 0 else hidden_size,
                 hidden_size=hidden_size,
             )
             for layer in range(num_layers)
@@ -215,6 +222,12 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
             self.attention = AttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=False)
         else:
             self.attention = None
+
+        if self.b_condition_end:
+            self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
+            self.logit_tag = Linear(embed_dim, out_embed_dim, dropout=dropout_out)
+            self.activ_deep_output=nn.Tanh()
+
         if hidden_size != out_embed_dim:
             self.additional_fc = Linear(hidden_size, out_embed_dim)
         if adaptive_softmax_cutoff is not None:
@@ -249,9 +262,11 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
         #embed additional tokens
         x_b=self.embed_tokens_b(prev_output_tokens_b)
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
+        logit_tag_input=x_b
 
         #Concatenate both
-        x=torch.cat((x, x_b), dim=2)
+        if not self.b_condition_end:
+            x=torch.cat((x, x_b), dim=2)
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
@@ -316,6 +331,11 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
             attn_scores = attn_scores.transpose(0, 2)
         else:
             attn_scores = None
+
+        if self.b_condition_end:
+            logit_lstm_out=self.logit_lstm(x)
+            logit_tag_out=self.logit_tag(logit_tag_input)
+            x=self.activ_deep_output(logit_lstm_out + logit_tag_out)
 
         # project back to size of vocabulary
         if self.adaptive_softmax is None:
