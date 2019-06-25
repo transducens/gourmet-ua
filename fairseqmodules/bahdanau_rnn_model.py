@@ -19,6 +19,14 @@ from fairseq.models.lstm import LSTMModel,LSTMEncoder,LSTMDecoder,base_architect
 @register_model('bahdanau_rnn')
 class BahdanauRNNModel(LSTMModel):
 
+    @staticmethod
+    def add_args(parser):
+        """Add model-specific arguments to the parser."""
+        #Hack to call parent staticmethod
+        LSTMModel.add_args(parser)
+        parser.add_argument('--cond-gru', default=False, action='store_true',
+                            help='Use conditional GRU as in Nematus')
+
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance.
@@ -108,6 +116,7 @@ class BahdanauRNNModel(LSTMModel):
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
+            cond_gru=args.cond_gru,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -134,6 +143,8 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
         BahdanauRNNModel.add_args(parser)
         parser.add_argument('--tags-condition-end', default=False, action='store_true',
                             help='Tags condition surface form decoder only at the end, as in lexical model')
+        parser.add_argument('--cond-gru', default=False, action='store_true',
+                            help='Use conditional GRU as in Nematus')
 
 
     @classmethod
@@ -228,6 +239,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
             b_condition_end=args.tags_condition_end,
+            cond_gru=args.cond_gru,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -246,6 +258,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
+            cond_gru=args.cond_gru,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -390,6 +403,7 @@ class GRUEncoder(FairseqEncoder):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
 
+
 class ConcatAttentionLayer(nn.Module):
     def __init__(self, input_embed_dim, source_embed_dim, alignment_dim, bias=True, dropout=0.0):
         super().__init__()
@@ -444,13 +458,32 @@ class ConcatAttentionLayer(nn.Module):
 
         return x, attn_scores
 
+class ConditionalGru(nn.Module):
+    def __init__(self,input_embed_dim, source_context_dim, hidden_dim):
+        super().__init__()
+        self.input_embed_dim=input_embed_dim
+        self.source_context_dim=source_context_dim
+        self.hidden_dim=hidden_dim
+
+        self.gru1=nn.GRUCell(input_size=self.input_embed_dim,hidden_size=self.hidden_size)
+        #TODO: configure dropout
+        self.attention=ConcatAttentionLayer(input_embed_dim=self.hidden_dim, source_embed_dim=encoder_output_units,alignment_dim=hidden_size, bias=True, dropout=0.0)#bias = True like Bahdanau
+        self.gru2=nn.GRUCell(input_size=self.source_context_dim, hidden_size=self.hidden_size)
+
+    def forward(self,encoder_outs,prev_hidden,prev_emb,encoder_padding_mask):
+        cand_hidden=self.gru1(prev_emb,prev_hidden)
+        #TODO: precompute dropout
+        context,attn_scores=self.attention(cand_hidden,encoder_outs,encoder_padding_mask)
+        new_hidden=self.gru2(context,cand_hidden)
+        return new_hidden,attn_scores
+
 class GRUDecoder(FairseqIncrementalDecoder):
     """GRU decoder."""
     def __init__(
         self, dictionary, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None,
-        share_input_output_embed=False, adaptive_softmax_cutoff=None,
+        share_input_output_embed=False, cond_gru=False, adaptive_softmax_cutoff=None,
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
@@ -458,6 +491,8 @@ class GRUDecoder(FairseqIncrementalDecoder):
         self.hidden_size = hidden_size
         self.share_input_output_embed = share_input_output_embed
         self.need_attn = True
+
+        self.cond_gru=cond_gru;
 
         self.adaptive_softmax = None
         num_embeddings = len(dictionary)
@@ -476,19 +511,31 @@ class GRUDecoder(FairseqIncrementalDecoder):
         self.activ_initial_state=nn.Tanh()
 
         #TODO: should we apply droput here?
-        self.layers = nn.ModuleList([
-            # LSTM used custom initialization here
-            nn.GRUCell(
-                input_size=encoder_output_units + embed_dim if layer == 0 else hidden_size,
-                hidden_size=hidden_size,
-            )
-            for layer in range(num_layers)
-        ])
-        if attention:
-            # TODO make bias configurable
-            self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, dropout=dropout_out)#bias = True like Bahdanau
+        if not self.cond_gru:
+            self.layers = nn.ModuleList([
+                # LSTM used custom initialization here
+                nn.GRUCell(
+                    input_size=encoder_output_units + embed_dim if layer == 0 else hidden_size,
+                    hidden_size=hidden_size,
+                )
+                for layer in range(num_layers)
+            ])
+            if attention:
+                # TODO make bias configurable
+                self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, dropout=dropout_out)#bias = True like Bahdanau
+            else:
+                self.attention = None
         else:
-            self.attention = None
+            self.attention=None
+            self.layers = nn.ModuleList([
+                # LSTM used custom initialization here
+                ConditionalGru(
+                    input_embed_dim=embed_dim,
+                    source_context_dim=encoder_output_units
+                    hidden_dim=hidden_size,
+                )
+                for layer in range(num_layers)
+            ])
 
 
         #Deep output
@@ -583,12 +630,18 @@ class GRUDecoder(FairseqIncrementalDecoder):
             #out = F.dropout(out, p=self.dropout_out, training=self.training)
 
             # input to GRU: concatenate context vector and input embeddings
-            input = torch.cat((x[j, :, :], context_vector), dim=1)
+            if self.cond_gru:
+                input = x[j, :, :]
+            else:
+                input = torch.cat((x[j, :, :], context_vector), dim=1)
 
             for i, rnn in enumerate(self.layers):
                 #TODO: think about dropout
                 # recurrent cell:
-                hidden = rnn(input, prev_hiddens[i])
+                if self.cond_gru:
+                    hidden,attn_scores[:, j, :] = rnn(encoder_outs,prev_hiddens[i],input)
+                else:
+                    hidden = rnn(input, prev_hiddens[i])
 
                 # hidden state becomes the input to the next layer
                 #input = F.dropout(hidden, p=self.dropout_out, training=self.training)
@@ -662,14 +715,14 @@ class GRUDecoder(FairseqIncrementalDecoder):
     def make_generation_fast_(self, need_attn=False, **kwargs):
         self.need_attn = need_attn
 
-
+#TODO: implement gru cond here too
 class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
     """GRU decoder."""
     def __init__(
         self, dictionary,dictionary_b, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None,
-        share_input_output_embed=False, b_condition_end=False , adaptive_softmax_cutoff=None,
+        share_input_output_embed=False, b_condition_end=False , cond_gru=False , adaptive_softmax_cutoff=None,
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in

@@ -14,9 +14,7 @@ from . import lstm_two_decoders_model
 
 @register_model('lstm_two_decoders_async')
 class LSTMTwoDecodersAsyncModel(LSTMModel):
-    """
-    add_args is completely inherited
-    """
+
     def __init__(self, encoder, decoder, decoder_b):
         BaseFairseqModel.__init__(self)
         self.encoder = encoder
@@ -26,6 +24,13 @@ class LSTMTwoDecodersAsyncModel(LSTMModel):
         assert isinstance(self.decoder, lstm_two_decoders_model.LSTMDecoderTwoInputs)
         assert isinstance(self.decoder_b, LSTMDecoder)
 
+    @staticmethod
+    def add_args(parser):
+        """Add model-specific arguments to the parser."""
+        #Hack to call parent staticmethod
+        LSTMModel.add_args(parser)
+        parser.add_argument('--tags-condition-end', default=False, action='store_true',
+                            help='Tags condition surface form decoder only at the end, as in lexical model')
 
     @classmethod
     def build_model(cls, args, task):
@@ -114,6 +119,7 @@ class LSTMTwoDecodersAsyncModel(LSTMModel):
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
+            b_condition_end=args.tags_condition_end,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
