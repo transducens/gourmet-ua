@@ -143,8 +143,6 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
         BahdanauRNNModel.add_args(parser)
         parser.add_argument('--tags-condition-end', default=False, action='store_true',
                             help='Tags condition surface form decoder only at the end, as in lexical model')
-        parser.add_argument('--cond-gru', default=False, action='store_true',
-                            help='Use conditional GRU as in Nematus')
 
 
     @classmethod
@@ -239,7 +237,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
             b_condition_end=args.tags_condition_end,
-            cond_gru=args.cond_gru,
+            cond_gru=args.cond_gru if 'cond_gru' in args else False,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -258,7 +256,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
-            cond_gru=args.cond_gru,
+            cond_gru=args.cond_gru if 'cond_gru' in args else False,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -465,10 +463,10 @@ class ConditionalGru(nn.Module):
         self.source_context_dim=source_context_dim
         self.hidden_dim=hidden_dim
 
-        self.gru1=nn.GRUCell(input_size=self.input_embed_dim,hidden_size=self.hidden_size)
+        self.gru1=nn.GRUCell(input_size=self.input_embed_dim,hidden_size=self.hidden_dim)
         #TODO: configure dropout
-        self.attention=ConcatAttentionLayer(input_embed_dim=self.hidden_dim, source_embed_dim=encoder_output_units,alignment_dim=hidden_size, bias=True, dropout=0.0)#bias = True like Bahdanau
-        self.gru2=nn.GRUCell(input_size=self.source_context_dim, hidden_size=self.hidden_size)
+        self.attention=ConcatAttentionLayer(input_embed_dim=self.hidden_dim, source_embed_dim=source_context_dim,alignment_dim=self.hidden_dim, bias=True, dropout=0.0)#bias = True like Bahdanau
+        self.gru2=nn.GRUCell(input_size=self.source_context_dim, hidden_size=self.hidden_dim)
 
     def forward(self,encoder_outs,prev_hidden,prev_emb,encoder_padding_mask):
         cand_hidden=self.gru1(prev_emb,prev_hidden)
@@ -531,7 +529,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
                 # LSTM used custom initialization here
                 ConditionalGru(
                     input_embed_dim=embed_dim,
-                    source_context_dim=encoder_output_units
+                    source_context_dim=encoder_output_units,
                     hidden_dim=hidden_size,
                 )
                 for layer in range(num_layers)
@@ -639,7 +637,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
                 #TODO: think about dropout
                 # recurrent cell:
                 if self.cond_gru:
-                    hidden,attn_scores[:, j, :] = rnn(encoder_outs,prev_hiddens[i],input)
+                    hidden,attn_scores[:, j, :] = rnn(encoder_outs,prev_hiddens[i],input,encoder_padding_mask)
                 else:
                     hidden = rnn(input, prev_hiddens[i])
 
