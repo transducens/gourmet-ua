@@ -219,9 +219,8 @@ class TwoDecoderSequenceGenerator(object):
                 tgt_dict, min_len_a=1, min_len_b=0, max_len_a=1, max_len_b=0,
             )
         else:
-            #TODO: only if async
-            self.search = TwoDecoderAsyncBeamSearch(tgt_dict)
-            self.search_b = TwoDecoderAsyncBeamSearch(tgt_dict_b)
+            self.search = search.BeamSearch(tgt_dict)
+            self.search_b = search.BeamSearch(tgt_dict_b)
 
     @torch.no_grad()
     def generate(
@@ -242,6 +241,11 @@ class TwoDecoderSequenceGenerator(object):
         model = EnsembleModel(models,self.tgt_dict,self.tgt_dict_b)
         if not self.retain_dropout:
             model.eval()
+
+        if model.async:
+            #overwrite search instances
+            self.search = TwoDecoderAsyncBeamSearch(tgt_dict)
+            self.search_b = TwoDecoderAsyncBeamSearch(tgt_dict_b)
 
         # model.forward normally channels prev_output_tokens into the decoder
         # separately, but SequenceGenerator directly calls model.encoder

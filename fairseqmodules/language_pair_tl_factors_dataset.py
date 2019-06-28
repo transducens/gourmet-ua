@@ -150,7 +150,8 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
                 tgt_factors_async_item = torch.cat([self.tgt_factors_async[index], torch.LongTensor([eos])])
 
         d['target_factors']=tgt_factors_item
-        d['target_factors_async']=tgt_factors_async_item
+        if tgt_factors_async_item:
+            d['target_factors_async']=tgt_factors_async_item
         return d
 
     def collater(self, samples):
@@ -206,7 +207,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
                 'source': self.src_dict.dummy_sentence(src_len),
                 'target': self.tgt_dict.dummy_sentence(tgt_len) if self.tgt_dict is not None else None,
                 'target_factors':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_dict is not None else None,
-                'target_factors_async':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_dict is not None else None
+                'target_factors_async':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_async and self.tgt_factors_dict is not None else None
             }
             for i in range(bsz)
         ])
