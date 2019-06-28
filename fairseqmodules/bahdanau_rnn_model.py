@@ -297,7 +297,7 @@ class GRUEncoder(FairseqEncoder):
     """GRU encoder."""
     def __init__(
         self, dictionary, embed_dim=512, hidden_size=512, num_layers=1,
-        dropout_in=0.1, dropout_out=0.1, bidirectional=False,
+            dropout_in=0.1, dropout_out=0.1, bidirectional=False,
         left_pad=True, pretrained_embed=None, padding_value=0.,
     ):
         super().__init__(dictionary)
@@ -315,11 +315,12 @@ class GRUEncoder(FairseqEncoder):
             self.embed_tokens = pretrained_embed
 
         #Here the LSTM overwrote the initialization of weights
+        #We cannot apply dropout inside the GRU as Nematus
         self.rnn = nn.GRU(
             input_size=embed_dim,
             hidden_size=hidden_size,
             num_layers=num_layers,
-            dropout=self.dropout_out if num_layers > 1 else 0.,
+            dropout=self.dropout_out, #This is ignored as it is not applied in single-layer GRUs
             bidirectional=bidirectional,
         )
         self.left_pad = left_pad
@@ -344,7 +345,12 @@ class GRUEncoder(FairseqEncoder):
 
         # embed tokens
         x = self.embed_tokens(src_tokens)
-        x = F.dropout(x, p=self.dropout_in, training=self.training)
+        #Like in nematus, dropout all the embedding dimensions of a word at the
+        #same time
+        #
+        # Nematus uses tf.layers.dropout(x, noise_shape=(tf.shape(x)[0], tf.shape(x)[1], 1)
+        # See https://pytorch.org/docs/stable/nn.html#dropout-layers and https://discuss.pytorch.org/t/spatial-dropout-in-pytorch/21400/2
+        x = F.dropout2d(x, p=self.dropout_in, training=self.training)
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
@@ -362,7 +368,16 @@ class GRUEncoder(FairseqEncoder):
 
         # unpack outputs and apply dropout
         x, _ = nn.utils.rnn.pad_packed_sequence(packed_outs, padding_value=self.padding_value)
-        x = F.dropout(x, p=self.dropout_out, training=self.training)
+
+        # Since Nematus applies the same dropout mask to all timesteps inside the GRU,
+        # we do the same here
+        #
+        # See https://discuss.pytorch.org/t/spatial-dropout-in-pytorch/21400/2
+        #
+        # shape of x: (seq_len,bsz,hidden_size)
+        x = x.permute(1, 0, 2)
+        x = F.dropout2d(x, p=self.dropout_out, training=self.training)
+        x = x.permute(1, 0, 2)
         assert list(x.size()) == [seqlen, bsz, self.output_units]
 
         if self.bidirectional:
@@ -457,23 +472,39 @@ class ConcatAttentionLayer(nn.Module):
         return x, attn_scores
 
 class ConditionalGru(nn.Module):
-    def __init__(self,input_embed_dim, source_context_dim, hidden_dim):
+    def __init__(self,input_embed_dim, source_context_dim, hidden_dim,dropout=0.0):
         super().__init__()
         self.input_embed_dim=input_embed_dim
         self.source_context_dim=source_context_dim
         self.hidden_dim=hidden_dim
 
+        self.dropout=dropout
+
         self.gru1=nn.GRUCell(input_size=self.input_embed_dim,hidden_size=self.hidden_dim)
         #TODO: configure dropout
-        self.attention=ConcatAttentionLayer(input_embed_dim=self.hidden_dim, source_embed_dim=source_context_dim,alignment_dim=self.hidden_dim, bias=True, dropout=0.0)#bias = True like Bahdanau
+        self.attention=ConcatAttentionLayer(input_embed_dim=self.hidden_dim, source_embed_dim=source_context_dim,alignment_dim=self.hidden_dim, bias=True, dropout=dropout)#bias = True like Bahdanau
         self.gru2=nn.GRUCell(input_size=self.source_context_dim, hidden_size=self.hidden_dim)
 
-    def forward(self,encoder_outs,prev_hidden,prev_emb,encoder_padding_mask):
+    def initialize_minibatch(self,encoder_outs):
+        bsz=encoder_outs.size(1)
+        #Mask for applying the same dropout to cand hidden states in all timesteps
+        self.dropout_cand_hidden_mask= torch.ones([bsz ,self.hidden_dim ], dtype=encoder_outs.dtype, device=encoder_outs.device)
+        self.dropout_cand_hidden_mask=F.dropout(self.dropout_cand_hidden_mask,p=self.dropout, training=self.training)
+
+        self.precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs) if self.training else encoder_outs
+
+        #Mask for applying the same dropout to new_hidden states in all timesteps
+        #Not needed: it is applied outside
+        #self.dropout_new_hidden_mask= torch.ones([bsz ,self.hidden_dim ], dtype=encoder_outs.dtype, device=encoder_outs.device)
+        #self.dropout_new_hidden_mask=F.dropout(self.dropout_new_hidden_mask,p=self.dropout, training=self.training)
+
+    def forward(self,prev_hidden,prev_emb,encoder_padding_mask):
         cand_hidden=self.gru1(prev_emb,prev_hidden)
+        cand_hidden=cand_hidden*self.dropout_cand_hidden_mask
         #TODO: precompute dropout
-        context,attn_scores=self.attention(cand_hidden,encoder_outs,encoder_padding_mask)
+        context,attn_scores=self.attention(cand_hidden,self.precomputed_masked,encoder_padding_mask)
         new_hidden=self.gru2(context,cand_hidden)
-        return new_hidden,attn_scores
+        return new_hidden,attn_scores,context
 
 class GRUDecoder(FairseqIncrementalDecoder):
     """GRU decoder."""
@@ -524,6 +555,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
             else:
                 self.attention = None
         else:
+            assert num_layers == 1
             self.attention=None
             self.layers = nn.ModuleList([
                 # LSTM used custom initialization here
@@ -534,7 +566,6 @@ class GRUDecoder(FairseqIncrementalDecoder):
                 )
                 for layer in range(num_layers)
             ])
-
 
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
@@ -566,7 +597,12 @@ class GRUDecoder(FairseqIncrementalDecoder):
 
         # embed tokens
         x = self.embed_tokens(prev_output_tokens)
-        x = F.dropout(x, p=self.dropout_in, training=self.training)
+        #Like in nematus, dropout all the embedding dimensions of a word at the
+        #same time
+        #
+        # Nematus uses tf.layers.dropout(x, noise_shape=(tf.shape(x)[0], tf.shape(x)[1], 1)
+        # See https://pytorch.org/docs/stable/nn.html#dropout-layers and https://discuss.pytorch.org/t/spatial-dropout-in-pytorch/21400/2
+        x = F.dropout2d(x, p=self.dropout_in, training=self.training)
 
         #bsz x seqlen x hidden_size
         logit_prev_input=x
@@ -616,16 +652,21 @@ class GRUDecoder(FairseqIncrementalDecoder):
             #Precompute masked source hidden states
             precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs) if self.training else encoder_outs
 
+
+        #Mask for applying the same dropout to hidden states in all timesteps
+        dropout_hidden_mask= torch.ones([bsz ,self.hidden_size ], dtype=x.dtype, device=x.device)
+        dropout_hidden_mask=F.dropout(dropout_hidden_mask,p=self.dropout_out, training=self.training)
+
+        if self.cond_gru:
+            for i, rnn in enumerate(self.layers):
+                rnn.initialize_minibatch(encoder_outs)
+
         for j in range(seqlen):
             # apply attention using the last layer's hidden state
             if self.attention is not None:
                 context_vector, attn_scores[:, j, :] = self.attention(prev_hiddens[-1], precomputed_masked, encoder_padding_mask)
             else:
                 context_vector = encoder_outs[0] #TODO: it should be the last state
-            context_vectors.append(context_vector)
-
-            #TODO: apply this dropout?
-            #out = F.dropout(out, p=self.dropout_out, training=self.training)
 
             # input to GRU: concatenate context vector and input embeddings
             if self.cond_gru:
@@ -634,13 +675,14 @@ class GRUDecoder(FairseqIncrementalDecoder):
                 input = torch.cat((x[j, :, :], context_vector), dim=1)
 
             for i, rnn in enumerate(self.layers):
-                #TODO: think about dropout
                 # recurrent cell:
                 if self.cond_gru:
-                    hidden,attn_scores[:, j, :] = rnn(encoder_outs,prev_hiddens[i],input,encoder_padding_mask)
+                    hidden,attn_scores[:, j, :],context_vector = rnn(prev_hiddens[i],input,encoder_padding_mask)
                 else:
                     hidden = rnn(input, prev_hiddens[i])
 
+                #Apply dropout to hidden
+                hidden=hidden*dropout_hidden_mask
                 # hidden state becomes the input to the next layer
                 #input = F.dropout(hidden, p=self.dropout_out, training=self.training)
                 #This is not needed anymore: input feeding is disabled in Bahdanau
@@ -648,7 +690,9 @@ class GRUDecoder(FairseqIncrementalDecoder):
                 # save state for next time step
                 prev_hiddens[i] = hidden
 
-            out = F.dropout(hidden, p=self.dropout_out, training=self.training)
+            context_vectors.append(context_vector)
+            #Hidden state of top layer
+            out=hidden
 
             # save final output
             outs.append(out)
@@ -681,9 +725,6 @@ class GRUDecoder(FairseqIncrementalDecoder):
 
         # project back to size of vocabulary
         if self.adaptive_softmax is None:
-            if hasattr(self, 'additional_fc'):
-                x = self.additional_fc(x)
-                x = F.dropout(x, p=self.dropout_out, training=self.training)
             if self.share_input_output_embed:
                 x = F.linear(x, self.embed_tokens.weight)
             else:
@@ -713,7 +754,6 @@ class GRUDecoder(FairseqIncrementalDecoder):
     def make_generation_fast_(self, need_attn=False, **kwargs):
         self.need_attn = need_attn
 
-#TODO: implement gru cond here too
 class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
     """GRU decoder."""
     def __init__(
@@ -730,6 +770,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.need_attn = True
 
         self.b_condition_end = b_condition_end
+        self.cond_gru=cond_gru
 
         self.adaptive_softmax = None
         num_embeddings = len(dictionary)
@@ -753,20 +794,31 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.linear_initial_state=Linear(encoder_output_units,hidden_size,dropout=dropout_in)
         self.activ_initial_state=nn.Tanh()
 
-        #TODO: should we apply droput here?
-        self.layers = nn.ModuleList([
-            # LSTM used custom initialization here
-            nn.GRUCell(
-                input_size=( (encoder_output_units + embed_dim*2) if not self.b_condition_end else (encoder_output_units + embed_dim) ) if layer == 0 else hidden_size,
-                hidden_size=hidden_size,
-            )
-            for layer in range(num_layers)
-        ])
-        if attention:
-            # TODO make bias configurable
-            self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, dropout=dropout_out)#bias = True like Bahdanau
+        if not self.cond_gru:
+            self.layers = nn.ModuleList([
+                # LSTM used custom initialization here
+                nn.GRUCell(
+                    input_size=( (encoder_output_units + embed_dim*2) if not self.b_condition_end else (encoder_output_units + embed_dim) ) if layer == 0 else hidden_size,
+                    hidden_size=hidden_size,
+                )
+                for layer in range(num_layers)
+            ])
+            if attention:
+                # TODO make bias configurable
+                self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, dropout=dropout_out)#bias = True like Bahdanau
+            else:
+                self.attention = None
         else:
-            self.attention = None
+            assert num_layers == 1
+            self.attention=None
+            self.layers = nn.ModuleList([
+                ConditionalGru(
+                    input_embed_dim=embed_dim*2 if not self.b_condition_end else embed_dim,
+                    source_context_dim=encoder_output_units,
+                    hidden_dim=hidden_size,
+                )
+                for layer in range(num_layers)
+            ])
 
 
         #Deep output
@@ -802,11 +854,11 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         # embed tokens
         x = self.embed_tokens(prev_output_tokens)
-        x = F.dropout(x, p=self.dropout_in, training=self.training)
+        x = F.dropout2d(x, p=self.dropout_in, training=self.training)
 
         #embed additional tokens
         x_b=self.embed_tokens_b(prev_output_tokens_b)
-        x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
+        x_b = F.dropout2d(x_b, p=self.dropout_in, training=self.training)
         logit_tag_input=x_b
 
         #Concatenate both
@@ -861,24 +913,32 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             #Precompute masked source hidden states
             precomputed_masked=self.attention.precompute_masked_source_hids(encoder_outs) if self.training else encoder_outs
 
+        #Mask for applying the same dropout to hidden states in all timesteps
+        dropout_hidden_mask= torch.ones([bsz ,self.hidden_size ], dtype=x.dtype, device=x.device)
+        dropout_hidden_mask=F.dropout(dropout_hidden_mask,p=self.dropout_out, training=self.training)
+
+        if self.cond_gru:
+            for i, rnn in enumerate(self.layers):
+                rnn.initialize_minibatch(encoder_outs)
+
         for j in range(seqlen):
             # apply attention using the last layer's hidden state
             if self.attention is not None:
                 context_vector, attn_scores[:, j, :] = self.attention(prev_hiddens[-1], precomputed_masked, encoder_padding_mask)
             else:
                 context_vector = encoder_outs[0] #TODO: it should be the last state
-            context_vectors.append(context_vector)
-
-            #TODO: apply this dropout?
-            #out = F.dropout(out, p=self.dropout_out, training=self.training)
 
             # input to GRU: concatenate context vector and input embeddings
-            input = torch.cat((x[j, :, :], context_vector), dim=1)
+            if self.cond_gru:
+                input = x[j, :, :]
+            else:
+                input = torch.cat((x[j, :, :], context_vector), dim=1)
 
             for i, rnn in enumerate(self.layers):
-                #TODO: think about dropout
-                # recurrent cell:
-                hidden = rnn(input, prev_hiddens[i])
+                if self.cond_gru:
+                    hidden,attn_scores[:, j, :],context_vector = rnn(encoder_outs,prev_hiddens[i],input,encoder_padding_mask)
+                else:
+                    hidden = rnn(input, prev_hiddens[i])
 
                 # hidden state becomes the input to the next layer
                 #input = F.dropout(hidden, p=self.dropout_out, training=self.training)
@@ -887,7 +947,10 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 # save state for next time step
                 prev_hiddens[i] = hidden
 
-            out = F.dropout(hidden, p=self.dropout_out, training=self.training)
+            context_vectors.append(context_vector)
+            
+            #Hidden state of top layer
+            out=hidden
 
             # save final output
             outs.append(out)
@@ -925,9 +988,6 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         # project back to size of vocabulary
         if self.adaptive_softmax is None:
-            if hasattr(self, 'additional_fc'):
-                x = self.additional_fc(x)
-                x = F.dropout(x, p=self.dropout_out, training=self.training)
             if self.share_input_output_embed:
                 x = F.linear(x, self.embed_tokens.weight)
             else:
@@ -958,14 +1018,30 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.need_attn = need_attn
 
 
-def Linear(in_features, out_features, bias=True, dropout=0):
-    """Linear layer (input: N x T x C)"""
-    m = nn.Linear(in_features, out_features, bias=bias)
-    m.weight.data.uniform_(-0.1, 0.1)
-    if bias:
-        m.bias.data.uniform_(-0.1, 0.1)
-    d=nn.Dropout(dropout)
-    return nn.Sequential(m,d)
+class Linear(nn.Module):
+    def __init__(self,in_features, out_features, bias=True, dropout=0):
+        self.layer=nn.Linear(in_features, out_features, bias=bias)
+        self.layer.weight.data.uniform_(-0.1, 0.1)
+        if bias:
+            self.layer.bias.data.uniform_(-0.1, 0.1)
+        self.dropout=nn.Dropout2d(dropout)
+    def forward(self,x):
+        x=self.layer(x)
+        #in: bsz x seq_len x channel
+        x=x.permute(0,2,1)
+        x=self.dropout(x)
+        x=x.permute(0,2,1)
+        return x
+
+
+#def Linear(in_features, out_features, bias=True, dropout=0):
+#    """Linear layer (input: N x T x C)"""
+#    m = nn.Linear(in_features, out_features, bias=bias)
+#    m.weight.data.uniform_(-0.1, 0.1)
+#    if bias:
+#        m.bias.data.uniform_(-0.1, 0.1)
+#    d=nn.Dropout(dropout)
+#    return nn.Sequential(m,d)
 
 def Embedding(num_embeddings, embedding_dim, padding_idx):
     m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
