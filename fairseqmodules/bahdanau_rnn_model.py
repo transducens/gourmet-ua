@@ -1020,17 +1020,22 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
 class Linear(nn.Module):
     def __init__(self,in_features, out_features, bias=True, dropout=0):
+        super(Linear, self).__init__()
         self.layer=nn.Linear(in_features, out_features, bias=bias)
         self.layer.weight.data.uniform_(-0.1, 0.1)
         if bias:
             self.layer.bias.data.uniform_(-0.1, 0.1)
         self.dropout=nn.Dropout2d(dropout)
+        self.dropout_short=nn.Dropout(dropout)
     def forward(self,x):
         x=self.layer(x)
-        #in: bsz x seq_len x channel
-        x=x.permute(0,2,1)
-        x=self.dropout(x)
-        x=x.permute(0,2,1)
+        if len(x.size()) < 3:
+            x=self.dropout_short(x)
+        else:
+            #in: bsz x seq_len x channel
+            x=x.permute(0,2,1)
+            x=self.dropout(x)
+            x=x.permute(0,2,1)
         return x
 
 
