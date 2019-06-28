@@ -237,7 +237,7 @@ rule train_nmt_fairseq:
 		output:
 				"{dir}/checkpoints/checkpoint_best.pt".format(dir=modelDir)
 		shell:
-				"{trainCmd} --save-dir {modelDir}/checkpoints {input.databin}"
+				"{trainCmd} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train.log"
 
 rule choose_best_checkpoint:
 		input:
