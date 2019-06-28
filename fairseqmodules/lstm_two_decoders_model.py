@@ -228,7 +228,7 @@ class LSTMDecoderTwoInputs(LSTMDecoder):
             self.logit_tag = Linear(embed_dim, out_embed_dim, dropout=dropout_out)
             self.activ_deep_output=nn.Tanh()
 
-        if hidden_size != out_embed_dim:
+        if hidden_size != out_embed_dim and not  self.b_condition_end:
             self.additional_fc = Linear(hidden_size, out_embed_dim)
         if adaptive_softmax_cutoff is not None:
             # setting adaptive_softmax dropout to dropout_out for now but can be redefined
