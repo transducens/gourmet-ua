@@ -26,6 +26,8 @@ class BahdanauRNNModel(LSTMModel):
         LSTMModel.add_args(parser)
         parser.add_argument('--cond-gru', default=False, action='store_true',
                             help='Use conditional GRU as in Nematus')
+        parser.add_argument('--debug', default=False, action='store_true',
+                            help='Print content of minibacthes')
 
     @classmethod
     def build_model(cls, args, task):
@@ -103,6 +105,7 @@ class BahdanauRNNModel(LSTMModel):
             dropout_out=args.encoder_dropout_out,
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=pretrained_encoder_embed,
+            debug=args.debug
         )
         decoder = GRUDecoder(
             dictionary=task.target_dictionary,
@@ -121,6 +124,7 @@ class BahdanauRNNModel(LSTMModel):
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
             ),
+            debug=args.debug
         )
         r= cls(encoder, decoder)
         return r
@@ -224,6 +228,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             dropout_out=args.encoder_dropout_out,
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=pretrained_encoder_embed,
+            debug=args.debug
         )
 
         decoder = GRUDecoderTwoInputs(
@@ -245,6 +250,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
             ),
+            debug=args.debug
         )
 
         if args.surface_condition_tags:
@@ -267,6 +273,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                     options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                     if args.criterion == 'adaptive_loss' else None
                 ),
+                debug=args.debug
             )
         else:
             decoder_b = GRUDecoder(
@@ -286,6 +293,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                     options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                     if args.criterion == 'adaptive_loss' else None
                     ),
+                debug=args.debug
         )
 
         r= cls(encoder, decoder, decoder_b)
@@ -417,6 +425,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             dropout_out=args.encoder_dropout_out,
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=pretrained_encoder_embed,
+            debug=args.debug
         )
 
         decoder = GRUDecoderTwoInputs(
@@ -438,6 +447,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
             ),
+            debug=args.debug
         )
 
         decoder_b = GRUDecoder(
@@ -457,6 +467,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
             ),
+            debug=args.debug
         )
         r= cls(encoder, decoder, decoder_b)
         return r
@@ -494,7 +505,7 @@ class GRUEncoder(FairseqEncoder):
     def __init__(
         self, dictionary, embed_dim=512, hidden_size=512, num_layers=1,
             dropout_in=0.1, dropout_out=0.1, bidirectional=False,
-        left_pad=True, pretrained_embed=None, padding_value=0.,
+        left_pad=True, pretrained_embed=None, padding_value=0.,debug=False
     ):
         super().__init__(dictionary)
         self.num_layers = num_layers
@@ -502,6 +513,8 @@ class GRUEncoder(FairseqEncoder):
         self.dropout_out = dropout_out
         self.bidirectional = bidirectional
         self.hidden_size = hidden_size
+
+        self.debug=debug
 
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
@@ -527,7 +540,11 @@ class GRUEncoder(FairseqEncoder):
             self.output_units *= 2
 
     def forward(self, src_tokens, src_lengths):
-        #print("src_lengths: {}".format(src_lengths))
+        if self.debug:
+            print("forward Encoder: ")
+            print("src_lengths: {}".format(src_lengths))
+            print("src_tokens: {}".format(src_tokens))
+            print("")
 
         if self.left_pad:
             # convert left-padding to right-padding
@@ -708,7 +725,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
         self, dictionary, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None,
-        share_input_output_embed=False, cond_gru=False, adaptive_softmax_cutoff=None,
+        share_input_output_embed=False, cond_gru=False, adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
@@ -717,7 +734,9 @@ class GRUDecoder(FairseqIncrementalDecoder):
         self.share_input_output_embed = share_input_output_embed
         self.need_attn = True
 
-        self.cond_gru=cond_gru;
+        self.cond_gru=cond_gru
+
+        self.debug=debug
 
         self.adaptive_softmax = None
         num_embeddings = len(dictionary)
@@ -780,8 +799,11 @@ class GRUDecoder(FairseqIncrementalDecoder):
         encoder_out = encoder_out_dict['encoder_out']
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
 
-        #print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
-        #print("encoder_padding_mask: {}".format(encoder_padding_mask))
+        if self.debug:
+            print("GRUDecoder forward")
+            print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
+            print("prev_output_tokens: {}".format(prev_output_tokens))
+            print("encoder_padding_mask: {}".format(encoder_padding_mask))
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]
@@ -956,7 +978,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self, dictionary,dictionary_b, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None,
-        share_input_output_embed=False, b_condition_end=False , cond_gru=False , adaptive_softmax_cutoff=None,
+        share_input_output_embed=False, b_condition_end=False , cond_gru=False , adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
@@ -964,6 +986,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.hidden_size = hidden_size
         self.share_input_output_embed = share_input_output_embed
         self.need_attn = True
+
+        self.debug=False
 
         self.b_condition_end = b_condition_end
         self.cond_gru=cond_gru
@@ -1036,8 +1060,13 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         encoder_out = encoder_out_dict['encoder_out']
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
 
-        #print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
-        #print("encoder_padding_mask: {}".format(encoder_padding_mask))
+        if self.debug:
+            print("GRUDecoderTwoInputs forward")
+            print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
+            print("prev_output_tokens: {} ".format(prev_output_tokens))
+            print("prev_output_tokens_b size: {} ".format(prev_output_tokens_b.size()))
+            print("prev_output_tokens_b: {} ".format(prev_output_tokens_b))
+            print("encoder_padding_mask: {}".format(encoder_padding_mask))
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]
