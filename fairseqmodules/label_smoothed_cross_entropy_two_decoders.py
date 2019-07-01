@@ -8,6 +8,7 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
     def __init__(self, args, task):
         super().__init__(args, task)
         self.b_weight = args.b_decoder_weight
+        self.debug=args.debug_loss
 
     @staticmethod
     def add_args(parser):
@@ -16,6 +17,8 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         # fmt: off
         parser.add_argument('--b-decoder-weight', default=0.5, type=float,
                             help='Weight of auxiliary decoder in the loss')
+        parser.add_argument('--debug-loss', action='store_true',
+                            help='Show debug information about how loss is computed for each minibatch')
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -25,6 +28,10 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         3) logging outputs to display while training
         """
         net_output,net_output_b = model(**sample['net_input'])
+
+        if self.debug:
+            print("Computing loss on surface forms with reference: {}".format(model.get_target(sample,net_output))
+            print("Computing loss on factors with reference: {}".format(model.get_target_factors(sample,net_output_b))
 
         loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
         loss_b, nll_loss_b = self.compute_loss_factors(model, net_output_b, sample, reduce=reduce)
