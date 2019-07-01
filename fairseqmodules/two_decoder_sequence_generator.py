@@ -150,6 +150,7 @@ class TwoDecoderSequenceGenerator(object):
         diverse_beam_strength=0.5,
         match_source_len=False,
         no_repeat_ngram_size=0,
+        only_output_factors=False
     ):
         """Generates translations of a given source sentence.
         Args:
@@ -756,6 +757,9 @@ class TwoDecoderSequenceGenerator(object):
             #Print linguistic factors
             if TwoDecoderSequenceGenerator.DEBUG:
                 print( self.tgt_dict_b.string( finalized[sent][0]['tags']  ))
+
+            if self.only_output_factors:
+                print("TAGS: "+ self.tgt_dict_b.string( finalized[sent][0]['tags']  ))
 
         #Remove linguistic factors before returning
         return finalized

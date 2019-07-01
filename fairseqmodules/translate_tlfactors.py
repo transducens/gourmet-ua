@@ -19,6 +19,11 @@ from . import language_pair_tl_factors_dataset
 class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
 
     @staticmethod
+    def add_args(parser):
+        fairseq.tasks.translation.TranslationEarlyStopTask.add_args(parser)
+        parser.add_argument('--print-factors',  action='store_true',help='Print factors instead of surface forms when translating')
+
+    @staticmethod
     def load_pretrained_model(path, src_dict_path, tgt_dict_path , tgt_factors_dict_path, arg_overrides=None):
         model = utils.load_checkpoint_to_cpu(path)
         args = model['args']
@@ -157,6 +162,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 diverse_beam_strength=args.diverse_beam_strength,
                 match_source_len=args.match_source_len,
                 no_repeat_ngram_size=args.no_repeat_ngram_size,
+                only_output_factors=args.print_factors
             )
 
     @property
