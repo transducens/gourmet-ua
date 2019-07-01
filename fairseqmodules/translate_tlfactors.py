@@ -20,7 +20,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
 
     @staticmethod
     def add_args(parser):
-        fairseq.tasks.translation.TranslationEarlyStopTask.add_args(parser)
+        translate_early.TranslationEarlyStopTask.add_args(parser)
         parser.add_argument('--print-factors',  action='store_true',help='Print factors instead of surface forms when translating')
         parser.add_argument('--force-factors',type='str',help='File that contains the factors that must be included in the output')
 

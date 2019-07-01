@@ -105,7 +105,7 @@ class BahdanauRNNModel(LSTMModel):
             dropout_out=args.encoder_dropout_out,
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=pretrained_encoder_embed,
-            debug=args.debug
+            debug=args.debug if 'debug' in args else False
         )
         decoder = GRUDecoder(
             dictionary=task.target_dictionary,
@@ -124,7 +124,7 @@ class BahdanauRNNModel(LSTMModel):
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
             ),
-            debug=args.debug
+            debug=args.debug if 'debug' in args else False
         )
         r= cls(encoder, decoder)
         return r
@@ -228,7 +228,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             dropout_out=args.encoder_dropout_out,
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=pretrained_encoder_embed,
-            debug=args.debug
+            debug=args.debug if 'debug' in args else False
         )
 
         decoder = GRUDecoderTwoInputs(
@@ -250,7 +250,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
             ),
-            debug=args.debug
+            debug=args.debug if 'debug' in args else False
         )
 
         if args.surface_condition_tags:
@@ -273,7 +273,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                     options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                     if args.criterion == 'adaptive_loss' else None
                 ),
-                debug=args.debug
+                debug=args.debug if 'debug' in args else False
             )
         else:
             decoder_b = GRUDecoder(
@@ -293,7 +293,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                     options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                     if args.criterion == 'adaptive_loss' else None
                     ),
-                debug=args.debug
+                debug=args.debug if 'debug' in args else False
         )
 
         r= cls(encoder, decoder, decoder_b)
@@ -425,7 +425,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             dropout_out=args.encoder_dropout_out,
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=pretrained_encoder_embed,
-            debug=args.debug
+            debug=args.debug if 'debug' in args else False
         )
 
         decoder = GRUDecoderTwoInputs(
@@ -447,7 +447,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
             ),
-            debug=args.debug
+            debug=args.debug if 'debug' in args else False
         )
 
         decoder_b = GRUDecoder(
@@ -467,7 +467,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
             ),
-            debug=args.debug
+            debug=args.debug if 'debug' in args else False
         )
         r= cls(encoder, decoder, decoder_b)
         return r

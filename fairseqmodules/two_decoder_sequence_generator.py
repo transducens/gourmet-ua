@@ -210,6 +210,8 @@ class TwoDecoderSequenceGenerator(object):
         self.tgt_dict=tgt_dict
         self.tgt_dict_b=tgt_dict_b
 
+        self.only_output_factors=only_output_factors
+
         assert sampling_topk < 0 or sampling, '--sampling-topk requires --sampling'
 
         if sampling:
@@ -595,13 +597,20 @@ class TwoDecoderSequenceGenerator(object):
                     #CHANGE: search and search_b
                     search_f= self.search_b if is_decoder_b_step else self.search
                     my_vocab_size=self.vocab_size_b if is_decoder_b_step else self.vocab_size
-                    cand_scores, cand_indices, cand_beams = search_f.step(
-                        step,
-                        lprobs.view(bsz, -1, my_vocab_size),
-                        scores.view(bsz, beam_size, -1)[:, :, :step],
-                        tokens.view(bsz, beam_size, -1)[:,:, :step + 2],
-                        self.tgt_dict
-                    )
+                    if model.async:
+                        cand_scores, cand_indices, cand_beams = search_f.step(
+                            step,
+                            lprobs.view(bsz, -1, my_vocab_size),
+                            scores.view(bsz, beam_size, -1)[:, :, :step],
+                            tokens.view(bsz, beam_size, -1)[:,:, :step + 2],
+                            self.tgt_dict
+                        )
+                    else:
+                        cand_scores, cand_indices, cand_beams = search_f.step(
+                            step,
+                            lprobs.view(bsz, -1, my_vocab_size), 
+                            scores.view(bsz, beam_size, -1)[:, :, :step]
+                            )
                     if TwoDecoderSequenceGenerator.DEBUG:
                         print("Result of beam search\ncand_scores:{}\ncand_indices:{}\ncand_beams:{}\n".format( cand_scores, cand_indices, cand_beams))
             else:
@@ -864,7 +873,8 @@ class EnsembleModel(torch.nn.Module):
             print("words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b ] ))
 
         if self.incremental_states is not None:
-            if self.async and is_decoder_b_step:
+            #print("{} {}".format(self.async,is_decoder_b_step))
+            if is_decoder_b_step:
                 input_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]
 
                 #This structure depends on the particular model and might not work
@@ -875,7 +885,7 @@ class EnsembleModel(torch.nn.Module):
                 backup_states=[]
                 incremental_state_key=utils._get_full_incremental_state_key(dec, 'cached_state')
                 #TODO: check whether this works with GRU model
-                if incremental_state_key in input_state:
+                if self.async and incremental_state_key in input_state:
                     for state_comp_idx,state_comp in enumerate(input_state[incremental_state_key]):
                         if isinstance(state_comp,list):
                             state_comp=state_comp[0]
@@ -890,12 +900,13 @@ class EnsembleModel(torch.nn.Module):
                 decoder_out = list(dec(tokens_in_a, encoder_out, incremental_state=input_state))
 
                 #Restore states
-                for state_comp_idx,state_comp_dict in enumerate(backup_states):
-                    for k in state_comp_dict:
-                        if isinstance(input_state[incremental_state_key][state_comp_idx],list):
-                            input_state[incremental_state_key][state_comp_idx][0][k]=state_comp_dict[k]
-                        else:
-                            input_state[incremental_state_key][state_comp_idx][k]=state_comp_dict[k]
+                if self.async:
+                    for state_comp_idx,state_comp_dict in enumerate(backup_states):
+                        for k in state_comp_dict:
+                            if isinstance(input_state[incremental_state_key][state_comp_idx],list):
+                                input_state[incremental_state_key][state_comp_idx][0][k]=state_comp_dict[k]
+                            else:
+                                input_state[incremental_state_key][state_comp_idx][k]=state_comp_dict[k]
             else:
                 decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
         else:
