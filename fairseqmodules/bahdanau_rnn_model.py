@@ -987,7 +987,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.share_input_output_embed = share_input_output_embed
         self.need_attn = True
 
-        self.debug=False
+        self.debug=debug
 
         self.b_condition_end = b_condition_end
         self.cond_gru=cond_gru
