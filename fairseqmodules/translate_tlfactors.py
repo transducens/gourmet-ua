@@ -22,6 +22,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
     def add_args(parser):
         fairseq.tasks.translation.TranslationEarlyStopTask.add_args(parser)
         parser.add_argument('--print-factors',  action='store_true',help='Print factors instead of surface forms when translating')
+        parser.add_argument('--force-factors',type='str',help='File that contains the factors that must be included in the output')
 
     @staticmethod
     def load_pretrained_model(path, src_dict_path, tgt_dict_path , tgt_factors_dict_path, arg_overrides=None):
@@ -143,6 +144,11 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             from fairseq.sequence_scorer import SequenceScorer
             return SequenceScorer(self.target_dictionary)
         else:
+            #Load reference factors and convert them to arrays of numbers
+            forced_factors=None
+            if args.force_factors:
+
+
             from . import two_decoder_sequence_generator
             return two_decoder_sequence_generator.TwoDecoderSequenceGenerator(
                 self.target_dictionary,
@@ -162,7 +168,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 diverse_beam_strength=args.diverse_beam_strength,
                 match_source_len=args.match_source_len,
                 no_repeat_ngram_size=args.no_repeat_ngram_size,
-                only_output_factors=args.print_factors
+                only_output_factors=args.print_factors,
+                forced_factors=forced_factors
             )
 
     @property

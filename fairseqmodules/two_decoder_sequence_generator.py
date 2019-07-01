@@ -150,7 +150,8 @@ class TwoDecoderSequenceGenerator(object):
         diverse_beam_strength=0.5,
         match_source_len=False,
         no_repeat_ngram_size=0,
-        only_output_factors=False
+        only_output_factors=False,
+        forced_factors=None
     ):
         """Generates translations of a given source sentence.
         Args:
