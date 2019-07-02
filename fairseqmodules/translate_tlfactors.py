@@ -145,8 +145,16 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             return SequenceScorer(self.target_dictionary)
         else:
             #Load reference factors and convert them to arrays of numbers
-            forced_factors=None
+            self.forced_factors=None
             if args.force_factors:
+                self.forced_factors=[]
+                #args.force_factors is a file
+                with open(args.force_factors) as force_factors_f:
+                    for line in force_factors_f:
+                        line=line.rstrip("\n")
+                        toks=line.split()
+                        ids=[ self.target_factors_dictionary.index(t) for t in toks ]
+                        self.forced_factors.append(ids)
 
 
             from . import two_decoder_sequence_generator
@@ -169,8 +177,16 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 match_source_len=args.match_source_len,
                 no_repeat_ngram_size=args.no_repeat_ngram_size,
                 only_output_factors=args.print_factors,
-                forced_factors=forced_factors
             )
+
+    def inference_step(self, generator, models, sample, prefix_tokens=None):
+        with torch.no_grad():
+            batch_size=sample['net_input']['src_tokens'][0]
+            input_forced_factors=None
+            if self.forced_factors:
+                input_forced_factors=self.forced_factors[:batch_size]
+                self.forced_factors=self.forced_factors[batch_size:]
+            return generator.generate(models, sample, prefix_tokens=prefix_tokens,forced_factors=input_forced_factors)
 
     @property
     def target_factors_dictionary(self):

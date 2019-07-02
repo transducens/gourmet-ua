@@ -151,7 +151,6 @@ class TwoDecoderSequenceGenerator(object):
         match_source_len=False,
         no_repeat_ngram_size=0,
         only_output_factors=False,
-        forced_factors=None
     ):
         """Generates translations of a given source sentence.
         Args:
@@ -233,6 +232,7 @@ class TwoDecoderSequenceGenerator(object):
         sample,
         prefix_tokens=None,
         bos_token=None,
+        forced_factors=None
         **kwargs
     ):
         """Generate a batch of translations.
@@ -241,6 +241,7 @@ class TwoDecoderSequenceGenerator(object):
             sample (dict): batch
             prefix_tokens (torch.LongTensor, optional): force decoder to begin
                 with these tokens
+            forced_factors: List[List]: factors to be printed in each batch element
         """
         model = EnsembleModel(models,self.tgt_dict,self.tgt_dict_b)
         if not self.retain_dropout:
@@ -250,6 +251,7 @@ class TwoDecoderSequenceGenerator(object):
             #overwrite search instances
             self.search = TwoDecoderAsyncBeamSearch(tgt_dict)
             self.search_b = TwoDecoderAsyncBeamSearch(tgt_dict_b)
+
 
         # model.forward normally channels prev_output_tokens into the decoder
         # separately, but SequenceGenerator directly calls model.encoder
@@ -265,6 +267,11 @@ class TwoDecoderSequenceGenerator(object):
         bsz = input_size[0]
         src_len = input_size[1]
         beam_size = self.beam_size
+
+        #It is tricky to force factors when input batch size > 1
+        #When only support forced_factors with first dimension == 1
+        if forced_factors != None:
+            assert bsz == 1
 
         if self.match_source_len:
             max_len = src_lengths.max().item()
@@ -513,7 +520,7 @@ class TwoDecoderSequenceGenerator(object):
 
 
             #CHANGE: call the appropriate decoder: step +1 -> step +2
-            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step,last_scores)
+            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step,forced_factors=forced_factors[0],last_scores)
             if is_decoder_b_step:
                 d=self.tgt_dict_b
             else:
@@ -608,7 +615,7 @@ class TwoDecoderSequenceGenerator(object):
                     else:
                         cand_scores, cand_indices, cand_beams = search_f.step(
                             step,
-                            lprobs.view(bsz, -1, my_vocab_size), 
+                            lprobs.view(bsz, -1, my_vocab_size),
                             scores.view(bsz, beam_size, -1)[:, :, :step]
                             )
                     if TwoDecoderSequenceGenerator.DEBUG:
@@ -787,7 +794,7 @@ class EnsembleModel(torch.nn.Module):
         self.surface_condition_tags=False
         if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs):
             self.surface_condition_tags=True
-            
+
 
         self.models = torch.nn.ModuleList(models)
         self.incremental_states = None
@@ -813,7 +820,7 @@ class EnsembleModel(torch.nn.Module):
         return [model.encoder(**encoder_input) for model in self.models]
 
     @torch.no_grad()
-    def forward_decoder(self, tokens, encoder_outs, is_decoder_b_step=False,last_scores=None):
+    def forward_decoder(self, tokens, encoder_outs, is_decoder_b_step=False,forced_factors=None,last_scores=None):
         if len(self.models) == 1:
             return self._decode_one(
                 tokens,
@@ -828,7 +835,7 @@ class EnsembleModel(torch.nn.Module):
         log_probs = []
         avg_attn = None
         for model, encoder_out in zip(self.models, encoder_outs):
-            probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,last_scores=last_scores)
+            probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,last_scores=last_scores)
             log_probs.append(probs)
             if attn is not None:
                 if avg_attn is None:
@@ -840,9 +847,10 @@ class EnsembleModel(torch.nn.Module):
             avg_attn.div_(len(self.models))
         return avg_probs, avg_attn
 
-    def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step,last_scores):
+    def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step,forced_factors,last_scores):
         SPLITWORDMARK="@@"
         dummy_steps=[False for i in range(tokens.size(0))]
+        forced_factor_ids=None
         if is_decoder_b_step:
             dec = model.decoder_b
             dict_a=self.tgt_dict_b
@@ -857,6 +865,16 @@ class EnsembleModel(torch.nn.Module):
                 for i in range(tokens_in_b.size(0)):
                     if  self.tgt_dict[ tokens_in_b[i][-1] ].endswith(SPLITWORDMARK):
                         dummy_steps[i]=True
+
+            #Count number of generated full surface forms for each hypothesis to decide the factor to force
+            forced_factor_ids=None
+            if forced_factors:
+                forced_factor_ids=[]
+                for i in range(tokens_in_b.size(0)):
+                    num_full_sf=len( [t for t in tokens_in_b[i] if not  self.tgt_dict[ t ].endswith(SPLITWORDMARK) ])
+                    next_factor= forced_factors[num_full_sf] if num_full_sf < len(forced_factors) else self.tgt_dict_b.eos
+                    forced_factor_ids.append(next_factor)
+
             #Async:
             #if last element of tokens_in_b is not an end of word:
             #   - restore previous state after calling the decoder
@@ -938,6 +956,12 @@ class EnsembleModel(torch.nn.Module):
                 #Force decoder to produce the same tag
                 probs[i][:]=-math.inf
                 probs[i][ tokens_in_a[i][-1]  ]=0.0#last_scores[i]
+
+        if forced_factor_ids:
+            for i,id in enumerate(forced_factor_ids):
+                probs[i][:]=-math.inf
+                probs[i][id]=0.0
+
         return probs, attn
 
     def reorder_encoder_out(self, encoder_outs, new_order):
