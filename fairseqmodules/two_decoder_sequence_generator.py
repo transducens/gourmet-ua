@@ -784,6 +784,11 @@ class EnsembleModel(torch.nn.Module):
         if isinstance(models[0],lstm_two_decoders_async_model.LSTMTwoDecodersAsyncModel) or isinstance(models[0],  bahdanau_rnn_model.BahdanauRNNTwoDecodersAsyncModel):
             self.async=True
 
+        self.surface_condition_tags=False
+        if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs):
+            self.surface_condition_tags=True
+            
+
         self.models = torch.nn.ModuleList(models)
         self.incremental_states = None
         self.incremental_states_b = None
@@ -897,7 +902,10 @@ class EnsembleModel(torch.nn.Module):
 
                 if TwoDecoderSequenceGenerator.DEBUG:
                     print("Backup states: {}".format(backup_states))
-                decoder_out = list(dec(tokens_in_a, encoder_out, incremental_state=input_state))
+                if self.surface_condition_tags:
+                    decoder_out = list(dec(tokens_in_a, tokens_in_b, encoder_out, incremental_state=input_state))
+                else:
+                    decoder_out = list(dec(tokens_in_a, encoder_out, incremental_state=input_state))
 
                 #Restore states
                 if self.async:
