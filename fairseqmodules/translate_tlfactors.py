@@ -1,4 +1,5 @@
 import sys,os,itertools
+import torch
 
 from fairseq.tasks import register_task
 from fairseq.meters import AverageMeter
@@ -22,7 +23,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
     def add_args(parser):
         translate_early.TranslationEarlyStopTask.add_args(parser)
         parser.add_argument('--print-factors',  action='store_true',help='Print factors instead of surface forms when translating')
-        parser.add_argument('--force-factors',type='str',help='File that contains the factors that must be included in the output')
+        parser.add_argument('--force-factors',help='File that contains the factors that must be included in the output')
 
     @staticmethod
     def load_pretrained_model(path, src_dict_path, tgt_dict_path , tgt_factors_dict_path, arg_overrides=None):
@@ -181,7 +182,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
 
     def inference_step(self, generator, models, sample, prefix_tokens=None):
         with torch.no_grad():
-            batch_size=sample['net_input']['src_tokens'][0]
+            batch_size=sample['net_input']['src_tokens'].size(0)
             input_forced_factors=None
             if self.forced_factors:
                 input_forced_factors=self.forced_factors[:batch_size]

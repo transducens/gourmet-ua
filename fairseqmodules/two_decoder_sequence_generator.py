@@ -232,7 +232,7 @@ class TwoDecoderSequenceGenerator(object):
         sample,
         prefix_tokens=None,
         bos_token=None,
-        forced_factors=None
+        forced_factors=None,
         **kwargs
     ):
         """Generate a batch of translations.
@@ -268,10 +268,14 @@ class TwoDecoderSequenceGenerator(object):
         src_len = input_size[1]
         beam_size = self.beam_size
 
+        if TwoDecoderSequenceGenerator.DEBUG:
+            print("Starting generate() with forced_factors: {}".format(forced_factors))
+
         #It is tricky to force factors when input batch size > 1
         #When only support forced_factors with first dimension == 1
         if forced_factors != None:
             assert bsz == 1
+            forced_factors=forced_factors[0]
 
         if self.match_source_len:
             max_len = src_lengths.max().item()
@@ -520,7 +524,7 @@ class TwoDecoderSequenceGenerator(object):
 
 
             #CHANGE: call the appropriate decoder: step +1 -> step +2
-            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step,forced_factors=forced_factors[0],last_scores)
+            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step,forced_factors=forced_factors,last_scores=last_scores)
             if is_decoder_b_step:
                 d=self.tgt_dict_b
             else:
@@ -829,7 +833,9 @@ class EnsembleModel(torch.nn.Module):
                 self.incremental_states,
                 log_probs=True,
                 is_decoder_b_step=is_decoder_b_step,
-                last_scores=last_scores
+                forced_factors=forced_factors,
+                last_scores=last_scores,
+
             )
 
         log_probs = []
@@ -848,6 +854,8 @@ class EnsembleModel(torch.nn.Module):
         return avg_probs, avg_attn
 
     def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step,forced_factors,last_scores):
+        if TwoDecoderSequenceGenerator.DEBUG:
+            print("Starting _decode_one with forced_factors: {}".format(forced_factors))
         SPLITWORDMARK="@@"
         dummy_steps=[False for i in range(tokens.size(0))]
         forced_factor_ids=None
@@ -871,8 +879,14 @@ class EnsembleModel(torch.nn.Module):
             if forced_factors:
                 forced_factor_ids=[]
                 for i in range(tokens_in_b.size(0)):
-                    num_full_sf=len( [t for t in tokens_in_b[i] if not  self.tgt_dict[ t ].endswith(SPLITWORDMARK) ])
-                    next_factor= forced_factors[num_full_sf] if num_full_sf < len(forced_factors) else self.tgt_dict_b.eos
+                    if self.async:
+                        #TODO: review me
+                        # tokens_in_b[i][1:] because first token is padding
+                        cand_position=len( [t for t in tokens_in_b[i][1:] if not  self.tgt_dict[ t ].endswith(SPLITWORDMARK) ])
+                    else:
+                        #Forced factor index is just based on length of already generated factors
+                        cand_position=tokens_in_a.size(1)-1
+                    next_factor= forced_factors[cand_position] if cand_position < len(forced_factors) else self.tgt_dict_b.eos()
                     forced_factor_ids.append(next_factor)
 
             #Async:
@@ -957,10 +971,13 @@ class EnsembleModel(torch.nn.Module):
                 probs[i][:]=-math.inf
                 probs[i][ tokens_in_a[i][-1]  ]=0.0#last_scores[i]
 
+        
         if forced_factor_ids:
-            for i,id in enumerate(forced_factor_ids):
+            if TwoDecoderSequenceGenerator.DEBUG:
+                print("Forcing the folowwing factor ids: {}".format(forced_factor_ids))
+            for i,fid in enumerate(forced_factor_ids):
                 probs[i][:]=-math.inf
-                probs[i][id]=0.0
+                probs[i][fid]=0.0
 
         return probs, attn
 
