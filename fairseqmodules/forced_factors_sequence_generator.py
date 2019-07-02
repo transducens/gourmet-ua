@@ -1,4 +1,12 @@
-class SequenceGenerator(object):
+import math
+
+import torch
+
+from fairseq import search, utils
+from fairseq.models import FairseqIncrementalDecoder
+
+
+class ForcedFactorsSequenceGenerator(object):
     def __init__(
         self,
         tgt_dict,
@@ -68,6 +76,7 @@ class SequenceGenerator(object):
         self.match_source_len = match_source_len
         self.no_repeat_ngram_size = no_repeat_ngram_size
 
+        self.tgt_dict=tgt_dict
         assert sampling_topk < 0 or sampling, '--sampling-topk requires --sampling'
 
         if sampling:
@@ -98,7 +107,7 @@ class SequenceGenerator(object):
             prefix_tokens (torch.LongTensor, optional): force decoder to begin
                 with these tokens
         """
-        model = EnsembleModel(models)
+        model = EnsembleModel(models,self.tgt_dict)
         if not self.retain_dropout:
             model.eval()
 
@@ -122,7 +131,7 @@ class SequenceGenerator(object):
         if forced_factors != None:
             assert bsz == 1
             forced_factors=forced_factors[0]
-
+        
         if self.match_source_len:
             max_len = src_lengths.max().item()
         else:
@@ -515,12 +524,13 @@ class SequenceGenerator(object):
 class EnsembleModel(torch.nn.Module):
     """A wrapper around an ensemble of models."""
 
-    def __init__(self, models):
+    def __init__(self, models,tgt_dict):
         super().__init__()
         self.models = torch.nn.ModuleList(models)
         self.incremental_states = None
         if all(isinstance(m.decoder, FairseqIncrementalDecoder) for m in models):
             self.incremental_states = {m: {} for m in models}
+        self.tgt_dict=tgt_dict
 
     def has_encoder(self):
         return hasattr(self.models[0], 'encoder')
@@ -542,7 +552,7 @@ class EnsembleModel(torch.nn.Module):
                 self.models[0],
                 encoder_outs[0] if self.has_encoder() else None,
                 self.incremental_states,
-                forced_factors
+                forced_factors,
                 log_probs=True,
             )
 
@@ -582,11 +592,13 @@ class EnsembleModel(torch.nn.Module):
             INTERLEAVINGMARK="interleaved_"
             forced_factor_ids=[]
             for i in range(tokens.size(0)):
-                #Forced factor index is the number of end-words in the hypothesis,
-                cand_position=len( [t for t in tokens[i][1:] if not  self.tgt_dict[ t ].endswith(SPLITWORDMARK) and not self.tgt_dict[ t ].startswith(INTERLEAVINGMARK) ])
-                next_factor= forced_factors[cand_position] if cand_position < len(forced_factors) else self.tgt_dict.eos()
-                probs[i][:]=-math.inf
-                probs[i][next_factor]=0.0
+                #We only force after generating a end-of-word surface form
+                if not  self.tgt_dict[  tokens[i][-1] ].endswith(SPLITWORDMARK) and not  self.tgt_dict[  tokens[i][-1] ].startswith(INTERLEAVINGMARK):
+                    #Forced factor index is the number of end-words in the hypothesis,
+                    cand_position=len( [t for t in tokens[i][1:] if not  self.tgt_dict[ t ].endswith(SPLITWORDMARK) and not self.tgt_dict[ t ].startswith(INTERLEAVINGMARK) ])
+                    next_factor= forced_factors[cand_position] if cand_position < len(forced_factors) else self.tgt_dict.eos()
+                    probs[i][:]=-math.inf
+                    probs[i][next_factor]=0.0
 
 
         #Force factor translations if option is set

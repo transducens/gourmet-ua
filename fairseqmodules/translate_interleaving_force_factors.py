@@ -18,9 +18,9 @@ from . import translate_early
 
 @register_task('translation_interleaving')
 class TranslationInterleavingTask(translate_early.TranslationEarlyStopTask):
-"""
-Only needed to force factors during decoding with interleaving
-"""
+    """
+    Only needed to force factors during decoding with interleaving
+    """
     @staticmethod
     def add_args(parser):
         translate_early.TranslationEarlyStopTask.add_args(parser)
@@ -41,7 +41,7 @@ Only needed to force factors during decoding with interleaving
                     for line in force_factors_f:
                         line=line.rstrip("\n")
                         toks=line.split()
-                        ids=[ self.target_factors_dictionary.index(t) for t in toks ]
+                        ids=[ self.target_dictionary.index(t) for t in toks ]
                         self.forced_factors.append(ids)
 
 
