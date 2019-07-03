@@ -52,7 +52,10 @@ def collate(
             target_factors_async=merge('target_factors_async', left_pad=left_pad_target)
             target_factors_async = target_factors_async.index_select(0, sort_order)
 
-        ntokens = sum(len(s['target']) for s in samples)+sum(len(s['target_factors']) for s in samples)
+        ntokens_a=sum(len(s['target']) for s in samples)
+        ntokens_b=sum(len(s['target_factors']) for s in samples)
+        ntokens =ntokens_a+ntokens_b
+
 
         if input_feeding:
             # we create a shifted version of targets for feeding the
@@ -87,11 +90,15 @@ def collate(
 
     else:
         ntokens = sum(len(s['source']) for s in samples)
+        ntokens_a=ntokens
+        ntokens_b=ntokens
 
     batch = {
         'id': id,
         'nsentences': len(samples),
         'ntokens': ntokens,
+        'ntokens_a': ntokens_a,
+        'ntokens_b': ntokens_b,
         'net_input': {
             'src_tokens': src_tokens,
             'src_lengths': src_lengths,

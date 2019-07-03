@@ -10,8 +10,6 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
         super().__init__(args, src_dict, tgt_dict)
         self.checkpoint_losses=[]
         self.valid_loss_meter=AverageMeter()
-        self.valid_loss_meter_a=AverageMeter()
-        self.valid_loss_meter_b=AverageMeter()
         self.after_valid_flag=False
         self.last_logging_output=None
         self.patience=args.early_stop_patience
@@ -30,7 +28,6 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
     def update_checkpoint_losses(self):
         if self.valid_loss_meter.count > 0:
             self.checkpoint_losses.append(self.valid_loss_meter.avg)
-            print("Separate validation losses from previous step: {} {}".format(self.valid_loss_meter_a.avg,self.valid_loss_meter_b.avg))
             print("Checkpoint losses: {}".format(self.checkpoint_losses))
             if len(self.checkpoint_losses) > self.patience:
                 minloss=min(self.checkpoint_losses)
@@ -39,8 +36,6 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
                     sys.exit(0)
 
             self.valid_loss_meter.reset()
-            self.valid_loss_meter_a.reset()
-            self.valid_loss_meter_b.reset()
 
     def get_batch_iterator(self, dataset, max_tokens=None, max_sentences=None, max_positions=None,ignore_invalid_inputs=False, required_batch_size_multiple=1,seed=1, num_shards=1, shard_id=0, num_workers=0):
          self.update_checkpoint_losses()
@@ -56,7 +51,5 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
         sample_size= super().grad_denom(sample_sizes, criterion)
         if self.after_valid_flag:
             self.valid_loss_meter.update(self.last_logging_output.get('loss', 0), sample_size)
-            self.valid_loss_meter_a.update(self.last_logging_output.get('loss_a', 0), sample_size)
-            self.valid_loss_meter_b.update(self.last_logging_output.get('loss_b', 0), sample_size)
         self.after_valid_flag=False
         return sample_size

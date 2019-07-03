@@ -46,6 +46,8 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         if self.args.sentence_avg:
             raise NotImplementedError
         sample_size = sample['target'].size(0) if self.args.sentence_avg else sample['ntokens']
+        sample_size_a = sample['target'].size(0) if self.args.sentence_avg else sample['ntokens_a']
+        sample_size_b = sample['target'].size(0) if self.args.sentence_avg else sample['ntokens_b']
 
         logging_output = {
             'loss': utils.item(loss.data) if reduce else loss.data,
@@ -55,8 +57,12 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
             'nll_loss_a': utils.item(nll_loss_a.data) if reduce else nll_loss_a.data,
             'nll_loss_b': utils.item(nll_loss_b.data) if reduce else nll_loss_b.data,
             'ntokens': sample['ntokens'],
+            'ntokens_a': sample['ntokens_a'],
+            'ntokens_b': sample['ntokens_b'],
             'nsentences': sample['target'].size(0),
             'sample_size': sample_size,
+            'sample_size_a': sample_size_a,
+            'sample_size_b': sample_size_b,
         }
         return loss, sample_size, logging_output
 
@@ -78,15 +84,19 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
     def aggregate_logging_outputs(logging_outputs):
         """Aggregate logging outputs from data parallel training."""
         ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
+        ntokens_a = sum(log.get('ntokens', 0) for log in logging_outputs)
+        ntokens_b = sum(log.get('ntokens', 0) for log in logging_outputs)
         nsentences = sum(log.get('nsentences', 0) for log in logging_outputs)
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
+        sample_size_a = sum(log.get('sample_size_a', 0) for log in logging_outputs)
+        sample_size_b = sum(log.get('sample_size_b', 0) for log in logging_outputs)
         return {
             'loss': sum(log.get('loss', 0) for log in logging_outputs) / sample_size / math.log(2) if sample_size > 0 else 0.,
             'nll_loss': sum(log.get('nll_loss', 0) for log in logging_outputs) / ntokens / math.log(2) if ntokens > 0 else 0.,
-            'loss_a': sum(log.get('loss_a', 0) for log in logging_outputs) / sample_size / math.log(2) if sample_size > 0 else 0.,
-            'nll_loss_a': sum(log.get('nll_loss_a', 0) for log in logging_outputs) / ntokens / math.log(2) if ntokens > 0 else 0.,
-            'loss_b': sum(log.get('loss_b', 0) for log in logging_outputs) / sample_size / math.log(2) if sample_size > 0 else 0.,
-            'nll_loss_b': sum(log.get('nll_loss_b', 0) for log in logging_outputs) / ntokens / math.log(2) if ntokens > 0 else 0.,
+            'loss_a': sum(log.get('loss_a', 0) for log in logging_outputs) / sample_size_a / math.log(2) if sample_size_a > 0 else 0.,
+            'nll_loss_a': sum(log.get('nll_loss_a', 0) for log in logging_outputs) / ntokens_a / math.log(2) if ntokens_b > 0 else 0.,
+            'loss_b': sum(log.get('loss_b', 0) for log in logging_outputs) / sample_size_b / math.log(2) if sample_size_b > 0 else 0.,
+            'nll_loss_b': sum(log.get('nll_loss_b', 0) for log in logging_outputs) / ntokens_b / math.log(2) if ntokens_b > 0 else 0.,
             'ntokens': ntokens,
             'nsentences': nsentences,
             'sample_size': sample_size,
