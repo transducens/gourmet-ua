@@ -35,21 +35,24 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
             print("Computing loss on surface forms with reference: (size {}) {}".format(model.get_targets(sample,net_output).size(),model.get_targets(sample,net_output)))
             print("Computing loss on factors with reference: (size {}) {}".format( model.get_target_factors(sample,net_output_b).size() ,model.get_target_factors(sample,net_output_b)))
 
-        loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
+        loss_a, nll_loss_a = self.compute_loss(model, net_output, sample, reduce=reduce)
         loss_b, nll_loss_b = self.compute_loss_factors(model, net_output_b, sample, reduce=reduce)
 
         #We might have problems here when the number of TL factors is different from the number of TL tokens
-        loss=loss*(1-self.b_weight)*2+loss_b*self.b_weight*2
-        nll_loss=nll_loss*(1-self.b_weight)*2+nll_loss_b*self.b_weight*2
+        loss=loss_a*(1-self.b_weight)*2+loss_b*self.b_weight*2
+        nll_loss=nll_loss_a*(1-self.b_weight)*2+nll_loss_b*self.b_weight*2
 
         if self.args.sentence_avg:
             raise NotImplementedError
         sample_size = sample['target'].size(0) if self.args.sentence_avg else sample['ntokens']
 
-
         logging_output = {
             'loss': utils.item(loss.data) if reduce else loss.data,
             'nll_loss': utils.item(nll_loss.data) if reduce else nll_loss.data,
+            'loss_a': utils.item(loss_a.data) if reduce else loss_a.data,
+            'loss_b': utils.item(loss_b.data) if reduce else loss_b.data,
+            'nll_loss_a': utils.item(nll_loss_a.data) if reduce else nll_loss_a.data,
+            'nll_loss_b': utils.item(nll_loss_b.data) if reduce else nll_loss_b.data,
             'ntokens': sample['ntokens'],
             'nsentences': sample['target'].size(0),
             'sample_size': sample_size,
@@ -69,3 +72,21 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         eps_i = self.eps / lprobs.size(-1)
         loss = (1. - self.eps) * nll_loss + eps_i * smooth_loss
         return loss, nll_loss
+
+    @staticmethod
+    def aggregate_logging_outputs(logging_outputs):
+        """Aggregate logging outputs from data parallel training."""
+        ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
+        nsentences = sum(log.get('nsentences', 0) for log in logging_outputs)
+        sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
+        return {
+            'loss': sum(log.get('loss', 0) for log in logging_outputs) / sample_size / math.log(2) if sample_size > 0 else 0.,
+            'nll_loss': sum(log.get('nll_loss', 0) for log in logging_outputs) / ntokens / math.log(2) if ntokens > 0 else 0.,
+            'loss_a': sum(log.get('loss_a', 0) for log in logging_outputs) / sample_size / math.log(2) if sample_size > 0 else 0.,
+            'nll_loss_a': sum(log.get('nll_loss_a', 0) for log in logging_outputs) / ntokens / math.log(2) if ntokens > 0 else 0.,
+            'loss_b': sum(log.get('loss_b', 0) for log in logging_outputs) / sample_size / math.log(2) if sample_size > 0 else 0.,
+            'nll_loss_b': sum(log.get('nll_loss_b', 0) for log in logging_outputs) / ntokens / math.log(2) if ntokens > 0 else 0.,
+            'ntokens': ntokens,
+            'nsentences': nsentences,
+            'sample_size': sample_size,
+        }
