@@ -6,4 +6,5 @@ from . import lstm_two_decoders_async_model
 from . import bahdanau_rnn_model
 from . import custom_architectures
 from . import label_smoothed_cross_entropy_two_decoders
+from . import cross_entropy_two_decoders
 from . import translate_interleaving_force_factors
