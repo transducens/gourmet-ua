@@ -1161,7 +1161,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
             for i, rnn in enumerate(self.layers):
                 if self.cond_gru:
-                    hidden,attn_scores[:, j, :],context_vector = rnn(encoder_outs,prev_hiddens[i],input,encoder_padding_mask)
+                    hidden,attn_scores[:, j, :],context_vector = rnn(prev_hiddens[i],input,encoder_padding_mask)
                 else:
                     hidden = rnn(input, prev_hiddens[i])
 
