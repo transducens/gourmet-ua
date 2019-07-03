@@ -159,6 +159,10 @@ def main(args):
         tgt_factors_dict= build_dictionary([train_path(args.target_lang)], tgt=True,factors=True, add_mark=not args.disable_bpe_marks)
         tgt_factors_dict.save(dict_path(args.target_lang+"factors"))
 
+    #If the SL text also contains linguistic factors, create a dictionary for them
+    if args.source_factors:
+        src_factors_dict=build_dictionary([train_path(args.source_lang)], src=True,tgt=False,factors=True, add_mark=False)
+        src_factors_dict.save(dict_path(args.source_lang+"factors"))
 
     def make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers):
         print("| [{}] Dictionary: {} types".format(lang, len(vocab) - 1))
@@ -274,6 +278,11 @@ def main(args):
                 make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
 
     make_all(args.source_lang, src_dict)
+    if args.source_factors:
+        #For consistency, we will call the file "asyncfactors"
+        #Moreoveer, make_binary_dataset will repeat interleaved tags to match bpe
+        #unles the file ends in "asyncfactors"
+        make_all(args.source_lang, src_factors_dict,factors=True,asyncfactors=True)
     if target:
         make_all(args.target_lang, tgt_dict)
         if args.additional_decoder_tl:
@@ -371,6 +380,7 @@ def cli_main():
     #Custom options
     parser.add_argument('--additional_decoder_tl', action='store_true',help='Add an additional decoder instead of interleaving')
     parser.add_argument('--disable_bpe_marks', action='store_true',help='Disable BPE marks on factors')
+    parser.add_argument('--source-factors', action='store_true',help='SL text contains interleaved factors')
     args = parser.parse_args()
     main(args)
 

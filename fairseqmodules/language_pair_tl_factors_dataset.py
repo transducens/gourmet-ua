@@ -31,6 +31,17 @@ def collate(
     id = id.index_select(0, sort_order)
     src_tokens = src_tokens.index_select(0, sort_order)
 
+    src_factors=None
+    src_factors_lengths=None
+
+    #Source factors
+    if samples[0].get('source_factors_async', None) is not None:
+        src_factors = merge('source_factors_async', left_pad=left_pad_source)
+        src_factors = src_factors.index_select(0, sort_order)
+
+        src_factors_lengths=torch.LongTensor([s['source_factors_async'].numel() for s in samples])
+        src_factors_lengths=src_factors_lengths.index_select(0, sort_order)
+
     prev_output_tokens = None
     prev_output_factors =None
     cur_output_factors =None
@@ -108,6 +119,10 @@ def collate(
     }
     if asyncTLFactors:
         batch['target_factors_async'] = target_factors_async
+    if src_factors is not None:
+        batch['net_input']['src_factors'] = src_factors
+    if src_factors_lengths is not None:
+        batch['net_input']['src_factors_lengths'] = src_factors_lengths
     if prev_output_tokens is not None:
         batch['net_input']['prev_output_tokens'] = prev_output_tokens
     if prev_output_factors is not None:
@@ -130,7 +145,9 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         tgt_factors=None,tgt_factors_sizes=None, tgt_factors_dict=None,
         left_pad_source=True, left_pad_target=False,
         max_source_positions=1024, max_target_positions=1024,
-        shuffle=True, input_feeding=True, remove_eos_from_source=False, append_eos_to_target=False,tgt_factors_async=None,tgt_factors_async_sizes=None
+        shuffle=True, input_feeding=True, remove_eos_from_source=False, append_eos_to_target=False,
+        tgt_factors_async=None,tgt_factors_async_sizes=None,
+        src_factors_async=None,src_factors_async_sizes=None,src_factors_dict=None
     ):
         super().__init__(src, src_sizes, src_dict,
         tgt, tgt_sizes, tgt_dict,
@@ -145,6 +162,10 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         self.tgt_factors_async=tgt_factors_async
         self.tgt_factors_async_sizes=tgt_factors_async_sizes
 
+        self.src_factors_dict=src_factors_dict
+        self.src_factors_async=src_factors_async
+        self.src_factors_async_sizes=src_factors_async_sizes
+
     def __getitem__(self, index):
         d=super().__getitem__(index)
         tgt_factors_item =self.tgt_factors[index] if self.tgt_factors is not None else None
@@ -156,9 +177,15 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
             if self.tgt_factors_async and self.tgt_factors_async[index][-1] != eos:
                 tgt_factors_async_item = torch.cat([self.tgt_factors_async[index], torch.LongTensor([eos])])
 
+        src_factors_aync_item=self.src_factors_async[index] if self.src_factors_async is not None else None
+
         d['target_factors']=tgt_factors_item
         if tgt_factors_async_item:
             d['target_factors_async']=tgt_factors_async_item
+
+        if src_factors_aync_item:
+            d['source_factors_async']=src_factors_async_item
+
         return d
 
     def collater(self, samples):
@@ -214,7 +241,8 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
                 'source': self.src_dict.dummy_sentence(src_len),
                 'target': self.tgt_dict.dummy_sentence(tgt_len) if self.tgt_dict is not None else None,
                 'target_factors':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_dict is not None else None,
-                'target_factors_async':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_async and self.tgt_factors_dict is not None else None
+                'target_factors_async':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_async and self.tgt_factors_dict is not None else None,
+                'source_factors_async':self.src_factors_dict.dummy_sentence(src_len) if self.src_factors_async and self.src_factors_dict is not None else None
             }
             for i in range(bsz)
         ])
