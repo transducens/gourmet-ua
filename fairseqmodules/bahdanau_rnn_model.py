@@ -892,6 +892,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
             else:
                 input = torch.cat((x[j, :, :], context_vector), dim=1)
 
+            #TODO: multi-layer IS WRONG
             for i, rnn in enumerate(self.layers):
                 # recurrent cell:
                 if self.cond_gru:
