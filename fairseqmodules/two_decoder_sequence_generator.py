@@ -829,10 +829,10 @@ class EnsembleModel(torch.nn.Module):
             self.incremental_states_b = {m: {} for m in models}
 
         self.models_factors=[]
+        self.incremental_states_factors = None
+        self.incremental_states_b_factors = None
         if self.independent_factors_models:
             self.models_factors = torch.nn.ModuleList(models_factors)
-            self.incremental_states_factors = None
-            self.incremental_states_b_factors = None
             if all(isinstance(m.decoder, FairseqIncrementalDecoder) for m in models_factors):
                 self.incremental_states_factors = {m: {} for m in models_factors}
             if all(isinstance(m.decoder_b, FairseqIncrementalDecoder) for m in models_factors):
