@@ -151,6 +151,7 @@ class TwoDecoderSequenceGenerator(object):
         match_source_len=False,
         no_repeat_ngram_size=0,
         only_output_factors=False,
+        separate_factors_sf_models=False
     ):
         """Generates translations of a given source sentence.
         Args:
@@ -210,6 +211,7 @@ class TwoDecoderSequenceGenerator(object):
         self.tgt_dict_b=tgt_dict_b
 
         self.only_output_factors=only_output_factors
+        self.independent_factors_models=independent_factors_models
 
         assert sampling_topk < 0 or sampling, '--sampling-topk requires --sampling'
 
@@ -244,7 +246,7 @@ class TwoDecoderSequenceGenerator(object):
                 with these tokens
             forced_factors: List[List]: factors to be printed in each batch element
         """
-        model = EnsembleModel(models,self.tgt_dict,self.tgt_dict_b)
+        model = EnsembleModel(models,self.tgt_dict,self.tgt_dict_b,self.independent_factors_models)
         if not self.retain_dropout:
             model.eval()
 
@@ -292,7 +294,7 @@ class TwoDecoderSequenceGenerator(object):
             )
 
         # compute the encoder output for each beam
-        encoder_outs = model.forward_encoder(encoder_input)
+        encoder_outs,encoder_outs_factors = model.forward_encoder(encoder_input)
         #For bsz=3, beam_size=5, max_len=20
         #tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2])
         new_order = torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1)
@@ -300,6 +302,7 @@ class TwoDecoderSequenceGenerator(object):
 
         #One encoder out for each hypothesis
         encoder_outs = model.reorder_encoder_out(encoder_outs, new_order)
+        encoder_outs_factors = model.reorder_encoder_out_factors(encoder_outs_factors, new_order)
 
         # initialize buffers
         #new: Constructs a new tensor of the same data type as self tensor.
@@ -511,8 +514,11 @@ class TwoDecoderSequenceGenerator(object):
                     # update beam indices to take into account removed sentences
                     corr = batch_idxs - torch.arange(batch_idxs.numel()).type_as(batch_idxs)
                     reorder_state.view(-1, beam_size).add_(corr.unsqueeze(-1) * beam_size)
+
                 model.reorder_incremental_state(reorder_state)
+
                 encoder_outs=model.reorder_encoder_out(encoder_outs, reorder_state)
+                encoder_outs_factors=model.reorder_encoder_out_factors(encoder_outs_factors, reorder_state)
 
             if TwoDecoderSequenceGenerator.DEBUG:
                 print("Incremental state: {}".format(model.incremental_states))
@@ -529,7 +535,7 @@ class TwoDecoderSequenceGenerator(object):
 
 
             #CHANGE: call the appropriate decoder: step +1 -> step +2
-            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
+            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,encoder_outs_factors,is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
             if is_decoder_b_step:
                 d=self.tgt_dict_b
             else:
@@ -794,7 +800,7 @@ class TwoDecoderSequenceGenerator(object):
 class EnsembleModel(torch.nn.Module):
     """A wrapper around an ensemble of models."""
 
-    def __init__(self, models,tgt_dict,tgt_dict_b):
+    def __init__(self, models,tgt_dict,tgt_dict_b,independent_factors_models=False):
         super().__init__()
         self.async=False
         if isinstance(models[0],lstm_two_decoders_async_model.LSTMTwoDecodersAsyncModel) or isinstance(models[0],  bahdanau_rnn_model.BahdanauRNNTwoDecodersAsyncModel):
@@ -804,6 +810,15 @@ class EnsembleModel(torch.nn.Module):
         if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs):
             self.surface_condition_tags=True
 
+        if independent_factors_models:
+            assert len(models) > 1
+        self.independent_factors_models=independent_factors_models
+
+        if self.independent_factors_models:
+            #Even positions: factors
+            #Odd positions: surface forms
+            models_factors=models[0::2]
+            models=models[1::2]
 
         self.models = torch.nn.ModuleList(models)
         self.incremental_states = None
@@ -812,6 +827,16 @@ class EnsembleModel(torch.nn.Module):
             self.incremental_states = {m: {} for m in models}
         if all(isinstance(m.decoder_b, FairseqIncrementalDecoder) for m in models):
             self.incremental_states_b = {m: {} for m in models}
+
+        self.models_factors=[]
+        if self.independent_factors_models:
+            self.models_factors = torch.nn.ModuleList(models_factors)
+            self.incremental_states_factors = None
+            self.incremental_states_b_factors = None
+            if all(isinstance(m.decoder, FairseqIncrementalDecoder) for m in models_factors):
+                self.incremental_states_factors = {m: {} for m in models_factors}
+            if all(isinstance(m.decoder_b, FairseqIncrementalDecoder) for m in models_factors):
+                self.incremental_states_b_factors = {m: {} for m in models_factors}
 
         self.tgt_dict=tgt_dict
         self.tgt_dict_b=tgt_dict_b
@@ -826,11 +851,11 @@ class EnsembleModel(torch.nn.Module):
     def forward_encoder(self, encoder_input):
         if not self.has_encoder():
             return None
-        return [model.encoder(**encoder_input) for model in self.models]
+        return [model.encoder(**encoder_input) for model in self.models],[model.encoder(**encoder_input) for model in self.models_factors]
 
     @torch.no_grad()
-    def forward_decoder(self, tokens, encoder_outs, is_decoder_b_step=False,forced_factors=None,forced_surface_forms=None,last_scores=None):
-        if len(self.models) == 1:
+    def forward_decoder(self, tokens, encoder_outs,encoder_outs_factors, is_decoder_b_step=False,forced_factors=None,forced_surface_forms=None,last_scores=None):
+        if len(self.models+self.models_factors) == 1:
             return self._decode_one(
                 tokens,
                 self.models[0],
@@ -846,20 +871,33 @@ class EnsembleModel(torch.nn.Module):
 
         log_probs = []
         avg_attn = None
+
         for model, encoder_out in zip(self.models, encoder_outs):
             probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,last_scores=last_scores)
-            log_probs.append(probs)
-            if attn is not None:
-                if avg_attn is None:
-                    avg_attn = attn
-                else:
-                    avg_attn.add_(attn)
-        avg_probs = torch.logsumexp(torch.stack(log_probs, dim=0), dim=0) - math.log(len(self.models))
+            if not (self.independent_factors_models and is_decoder_b_step):
+                log_probs.append(probs)
+                if attn is not None:
+                    if avg_attn is None:
+                        avg_attn = attn
+                    else:
+                        avg_attn.add_(attn)
+        if self.independent_factors_models:
+            for model, encoder_out in zip(self.models_factors, encoder_outs_factors):
+                probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,last_scores=last_scores)
+                if self.independent_factors_models and is_decoder_b_step:
+                    log_probs.append(probs)
+                    if attn is not None:
+                        if avg_attn is None:
+                            avg_attn = attn
+                        else:
+                            avg_attn.add_(attn)
+
+        avg_probs = torch.logsumexp(torch.stack(log_probs, dim=0), dim=0) - math.log(len(log_probs))
         if avg_attn is not None:
-            avg_attn.div_(len(self.models))
+            avg_attn.div_(len(log_probs))
         return avg_probs, avg_attn
 
-    def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step,forced_factors,forced_surface_forms,last_scores):
+    def _decode_one(self, tokens, model, encoder_out, incremental_states_do_not_use_me, log_probs,is_decoder_b_step,forced_factors,forced_surface_forms,last_scores):
         if TwoDecoderSequenceGenerator.DEBUG:
             print("Starting _decode_one with forced_factors: {}".format(forced_factors))
         SPLITWORDMARK="@@"
@@ -1004,6 +1042,13 @@ class EnsembleModel(torch.nn.Module):
             model.encoder.reorder_encoder_out(encoder_out, new_order)
             for model, encoder_out in zip(self.models, encoder_outs)
         ]
+    def reorder_encoder_out_factors(self, encoder_outs_factors, new_order):
+        if not self.has_encoder():
+            return
+        return [
+            model.encoder.reorder_encoder_out(encoder_out, new_order)
+            for model, encoder_out in zip(self.models_factors, encoder_outs_factors)
+        ]
 
     def reorder_incremental_state(self, new_order):
         if self.incremental_states is None:
@@ -1014,3 +1059,10 @@ class EnsembleModel(torch.nn.Module):
         if self.incremental_states_b != None:
             for model in self.models:
                 model.decoder_b.reorder_incremental_state(self.incremental_states_b[model], new_order)
+
+        for model in self.models_factors:
+            model.decoder.reorder_incremental_state(self.incremental_states_factors[model], new_order)
+
+        if self.incremental_states_b_factors != None:
+            for model in self.models_factors:
+                model.decoder_b.reorder_incremental_state(self.incremental_states_b_factors[model], new_order)
