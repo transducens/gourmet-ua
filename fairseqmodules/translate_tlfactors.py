@@ -24,6 +24,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         translate_early.TranslationEarlyStopTask.add_args(parser)
         parser.add_argument('--print-factors',  action='store_true',help='Print factors instead of surface forms when translating')
         parser.add_argument('--force-factors',help='File that contains the factors that must be included in the output')
+        parser.add_argument('--force-surface-forms',help='File that contains the surface forms that must be included in the output')
 
     @staticmethod
     def load_pretrained_model(path, src_dict_path, tgt_dict_path , tgt_factors_dict_path, arg_overrides=None):
@@ -147,6 +148,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         else:
             #Load reference factors and convert them to arrays of numbers
             self.forced_factors=None
+            self.forced_surface_forms=None
             if args.force_factors:
                 self.forced_factors=[]
                 #args.force_factors is a file
@@ -156,6 +158,15 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                         toks=line.split()
                         ids=[ self.target_factors_dictionary.index(t) for t in toks ]
                         self.forced_factors.append(ids)
+            if args.force_surcface_forms:
+                self.forced_surface_forms=[]
+                #args.force_factors is a file
+                with open(args.force_surcface_forms) as force_sf_f:
+                    for line in force_sf_f:
+                        line=line.rstrip("\n")
+                        toks=line.split()
+                        ids=[ self.target_dictionary.index(t) for t in toks ]
+                        self.forced_surface_forms.append(ids)
 
 
             from . import two_decoder_sequence_generator
@@ -184,10 +195,15 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         with torch.no_grad():
             batch_size=sample['net_input']['src_tokens'].size(0)
             input_forced_factors=None
+            input_forced_surface_forms=None
             if self.forced_factors:
                 input_forced_factors=self.forced_factors[:batch_size]
                 self.forced_factors=self.forced_factors[batch_size:]
-            return generator.generate(models, sample, prefix_tokens=prefix_tokens,forced_factors=input_forced_factors)
+            if self.forced_surface_forms:
+                input_forced_surface_forms=self.forced_surface_forms[:batch_size]
+                self.forced_surface_forms=self.forced_surface_forms[batch_size:]
+
+            return generator.generate(models, sample, prefix_tokens=prefix_tokens,forced_factors=input_forced_factors,forced_surface_forms=input_forced_surface_forms)
 
     @property
     def target_factors_dictionary(self):
