@@ -233,7 +233,7 @@ class TwoDecoderSequenceGenerator(object):
         prefix_tokens=None,
         bos_token=None,
         forced_factors=None,
-        forced_surface_forms=None
+        forced_surface_forms=None,
         **kwargs
     ):
         """Generate a batch of translations.
@@ -904,14 +904,6 @@ class EnsembleModel(torch.nn.Module):
             #Async:
             #   - Nothing to do: morph tags are repeated
 
-            if forced_surface_forms:
-                forced_word_ids=[]
-                #Count number of generated surface forms fragments for each hypothesis to decide the surface form to force
-                #[ The same one for all hypotheses ]
-                for i in range(tokens_in_a.size(0)):
-                    cand_position=tokens_in_b.size(1)-1
-                    next_word= forced_surface_forms[cand_position] if cand_position < len(forced_surface_forms) else self.tgt_dict.eos()
-                    forced_word_ids.append(next_word)
 
             dec = model.decoder
             dict_a=self.tgt_dict
@@ -919,6 +911,15 @@ class EnsembleModel(torch.nn.Module):
             #surface forms decoder input: surface forms, factors
             tokens_in_a=torch.index_select(tokens, -1, torch.tensor( [i for i in range(1,tokens.size(-1),2) ] ).to(tokens.device))
             tokens_in_b=torch.index_select(tokens, -1, torch.tensor( [i for i in range(0,tokens.size(-1),2) ] ).to(tokens.device))
+
+            if forced_surface_forms:
+                forced_word_ids=[]
+                #Count number of generated surface forms fragments for each hypothesis to decide the surface form to force
+                #[ The same one for all hypotheses ]
+                for i in range(tokens_in_a.size(0)):
+                    cand_position=tokens_in_a.size(1)-1
+                    next_word= forced_surface_forms[cand_position] if cand_position < len(forced_surface_forms) else self.tgt_dict.eos()
+                    forced_word_ids.append(next_word)
 
         if TwoDecoderSequenceGenerator.DEBUG:
             print("Doing one step in the decoder\nlast_scores:{}\ntokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\ndummy steps: {}".format(last_scores,tokens,is_decoder_b_step,tokens_in_a,tokens_in_b, dummy_steps))
@@ -987,10 +988,10 @@ class EnsembleModel(torch.nn.Module):
                 probs[i][ tokens_in_a[i][-1]  ]=0.0#last_scores[i]
 
 
-        if forced_factor_ids:
+        if forced_word_ids:
             if TwoDecoderSequenceGenerator.DEBUG:
-                print("Forcing the folowwing factor ids: {}".format(forced_factor_ids))
-            for i,fid in enumerate(forced_factor_ids):
+                print("Forcing the folowwing word ids: {}".format(forced_word_ids))
+            for i,fid in enumerate(forced_word_ids):
                 probs[i][:]=-math.inf
                 probs[i][fid]=0.0
 

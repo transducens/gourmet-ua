@@ -10,12 +10,18 @@ GPUS="$6"
 
 NAME="$7"
 
+if [ $# -ge 8  ]; then
+	TAGSMODE="$8"
+else
+	TAGSMODE=""
+fi
+
 SCORESFILE="scores$NAME"
 
 rm -f $CHECKPOINTDIR/$SCORESFILE
 for CP in $CHECKPOINTDIR/checkpoint*.pt ; do
   # Translate and evaluate
-  SCORE=$( CUDA_VISIBLE_DEVICES=$GPUS fairseq-interactive $TRANSLATEARGS  --input $DEVSL --path $CP $DATABIN | grep '^H-' | cut -f 3 | tee $CP.output$NAME | $VALIDATESCRIPT )
+  SCORE=$( CUDA_VISIBLE_DEVICES=$GPUS fairseq-interactive $TRANSLATEARGS  --input $DEVSL --path $CP $DATABIN | tee $CP.output$NAME.raw  |  {  if [ "$TAGSMODE" != "tags"  ]; then  cat - | grep '^H-' | cut -f 3 ; else  cat - | grep '^TAGS:'| cut -f 2- -d ' ' ; fi  } | tee $CP.output$NAME | $VALIDATESCRIPT )
   echo "$CP $SCORE" >> $CHECKPOINTDIR/scores$NAME
 done
 

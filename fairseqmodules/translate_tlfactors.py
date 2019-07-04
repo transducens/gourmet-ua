@@ -158,10 +158,10 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                         toks=line.split()
                         ids=[ self.target_factors_dictionary.index(t) for t in toks ]
                         self.forced_factors.append(ids)
-            if args.force_surcface_forms:
+            if args.force_surface_forms:
                 self.forced_surface_forms=[]
                 #args.force_factors is a file
-                with open(args.force_surcface_forms) as force_sf_f:
+                with open(args.force_surface_forms) as force_sf_f:
                     for line in force_sf_f:
                         line=line.rstrip("\n")
                         toks=line.split()
