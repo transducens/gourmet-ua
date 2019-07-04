@@ -233,6 +233,7 @@ class TwoDecoderSequenceGenerator(object):
         prefix_tokens=None,
         bos_token=None,
         forced_factors=None,
+        forced_surface_forms=None
         **kwargs
     ):
         """Generate a batch of translations.
@@ -276,6 +277,10 @@ class TwoDecoderSequenceGenerator(object):
         if forced_factors != None:
             assert bsz == 1
             forced_factors=forced_factors[0]
+
+        if forced_surface_forms != None:
+            assert bsz == 1
+            forced_surface_forms = forced_surface_forms[0]
 
         if self.match_source_len:
             max_len = src_lengths.max().item()
@@ -524,7 +529,7 @@ class TwoDecoderSequenceGenerator(object):
 
 
             #CHANGE: call the appropriate decoder: step +1 -> step +2
-            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step,forced_factors=forced_factors,last_scores=last_scores)
+            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
             if is_decoder_b_step:
                 d=self.tgt_dict_b
             else:
@@ -824,7 +829,7 @@ class EnsembleModel(torch.nn.Module):
         return [model.encoder(**encoder_input) for model in self.models]
 
     @torch.no_grad()
-    def forward_decoder(self, tokens, encoder_outs, is_decoder_b_step=False,forced_factors=None,last_scores=None):
+    def forward_decoder(self, tokens, encoder_outs, is_decoder_b_step=False,forced_factors=None,forced_surface_forms=None,last_scores=None):
         if len(self.models) == 1:
             return self._decode_one(
                 tokens,
@@ -834,6 +839,7 @@ class EnsembleModel(torch.nn.Module):
                 log_probs=True,
                 is_decoder_b_step=is_decoder_b_step,
                 forced_factors=forced_factors,
+                forced_surface_forms=forced_surface_forms,
                 last_scores=last_scores,
 
             )
@@ -853,12 +859,12 @@ class EnsembleModel(torch.nn.Module):
             avg_attn.div_(len(self.models))
         return avg_probs, avg_attn
 
-    def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step,forced_factors,last_scores):
+    def _decode_one(self, tokens, model, encoder_out, incremental_states, log_probs,is_decoder_b_step,forced_factors,forced_surface_forms,last_scores):
         if TwoDecoderSequenceGenerator.DEBUG:
             print("Starting _decode_one with forced_factors: {}".format(forced_factors))
         SPLITWORDMARK="@@"
         dummy_steps=[False for i in range(tokens.size(0))]
-        forced_factor_ids=None
+        forced_word_ids=None
         if is_decoder_b_step:
             dec = model.decoder_b
             dict_a=self.tgt_dict_b
@@ -875,9 +881,8 @@ class EnsembleModel(torch.nn.Module):
                         dummy_steps[i]=True
 
             #Count number of generated full surface forms for each hypothesis to decide the factor to force
-            forced_factor_ids=None
             if forced_factors:
-                forced_factor_ids=[]
+                forced_word_ids=[]
                 for i in range(tokens_in_b.size(0)):
                     if self.async:
                         #TODO: review me
@@ -887,7 +892,7 @@ class EnsembleModel(torch.nn.Module):
                         #Forced factor index is just based on length of already generated factors
                         cand_position=tokens_in_a.size(1)-1
                     next_factor= forced_factors[cand_position] if cand_position < len(forced_factors) else self.tgt_dict_b.eos()
-                    forced_factor_ids.append(next_factor)
+                    forced_word_ids.append(next_factor)
 
             #Async:
             #if last element of tokens_in_b is not an end of word:
@@ -898,6 +903,16 @@ class EnsembleModel(torch.nn.Module):
         else:
             #Async:
             #   - Nothing to do: morph tags are repeated
+
+            if forced_surface_forms:
+                forced_word_ids=[]
+                #Count number of generated surface forms fragments for each hypothesis to decide the surface form to force
+                #[ The same one for all hypotheses ]
+                for i in range(tokens_in_a.size(0)):
+                    cand_position=tokens_in_b.size(1)-1
+                    next_word= forced_surface_forms[cand_position] if cand_position < len(forced_surface_forms) else self.tgt_dict.eos()
+                    forced_word_ids.append(next_word)
+
             dec = model.decoder
             dict_a=self.tgt_dict
             dict_b=self.tgt_dict_b
@@ -971,7 +986,7 @@ class EnsembleModel(torch.nn.Module):
                 probs[i][:]=-math.inf
                 probs[i][ tokens_in_a[i][-1]  ]=0.0#last_scores[i]
 
-        
+
         if forced_factor_ids:
             if TwoDecoderSequenceGenerator.DEBUG:
                 print("Forcing the folowwing factor ids: {}".format(forced_factor_ids))
