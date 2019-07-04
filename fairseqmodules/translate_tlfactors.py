@@ -25,7 +25,6 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         parser.add_argument('--print-factors',  action='store_true',help='Print factors instead of surface forms when translating')
         parser.add_argument('--force-factors',help='File that contains the factors that must be included in the output')
         parser.add_argument('--force-surface-forms',help='File that contains the surface forms that must be included in the output')
-        parser.add_argument('--force-surface-forms',help='File that contains the surface forms that must be included in the output')
         parser.add_argument('--independent-factors-models',action='store_true',help='When translating with an ensemble of models, even models (starting with 0) are used to produce factors, and odd models are used to produce surface forms.')
 
     @staticmethod
