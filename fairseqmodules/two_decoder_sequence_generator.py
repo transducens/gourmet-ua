@@ -211,7 +211,7 @@ class TwoDecoderSequenceGenerator(object):
         self.tgt_dict_b=tgt_dict_b
 
         self.only_output_factors=only_output_factors
-        self.independent_factors_models=independent_factors_models
+        self.independent_factors_models=separate_factors_sf_models
 
         assert sampling_topk < 0 or sampling, '--sampling-topk requires --sampling'
 
@@ -855,7 +855,7 @@ class EnsembleModel(torch.nn.Module):
 
     @torch.no_grad()
     def forward_decoder(self, tokens, encoder_outs,encoder_outs_factors, is_decoder_b_step=False,forced_factors=None,forced_surface_forms=None,last_scores=None):
-        if len(self.models+self.models_factors) == 1:
+        if len(self.models)+len(self.models_factors) == 1:
             return self._decode_one(
                 tokens,
                 self.models[0],
@@ -873,7 +873,7 @@ class EnsembleModel(torch.nn.Module):
         avg_attn = None
 
         for model, encoder_out in zip(self.models, encoder_outs):
-            probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,last_scores=last_scores)
+            probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
             if not (self.independent_factors_models and is_decoder_b_step):
                 log_probs.append(probs)
                 if attn is not None:
@@ -883,7 +883,7 @@ class EnsembleModel(torch.nn.Module):
                         avg_attn.add_(attn)
         if self.independent_factors_models:
             for model, encoder_out in zip(self.models_factors, encoder_outs_factors):
-                probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,last_scores=last_scores)
+                probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
                 if self.independent_factors_models and is_decoder_b_step:
                     log_probs.append(probs)
                     if attn is not None:
