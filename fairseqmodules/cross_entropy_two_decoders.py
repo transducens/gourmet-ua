@@ -1,6 +1,6 @@
 import math
 from fairseq.criterions import register_criterion
-from fairseq.criterions.label_smoothed_cross_entropy import LabelSmoothedCrossEntropyCriterion
+from fairseq.criterions.cross_entropy import CrossEntropyCriterion
 
 from fairseq import utils
 
