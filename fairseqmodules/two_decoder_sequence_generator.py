@@ -963,10 +963,11 @@ class EnsembleModel(torch.nn.Module):
             print("Doing one step in the decoder\nlast_scores:{}\ntokens:{}\nis_decoder_b_step: {}\ntokens_in_a: {}\ntokens_in_b:{}\ndummy steps: {}".format(last_scores,tokens,is_decoder_b_step,tokens_in_a,tokens_in_b, dummy_steps))
             print("words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b ] ))
 
+        #TODO: think about whether I should change this condition
         if self.incremental_states is not None:
             #print("{} {}".format(self.async,is_decoder_b_step))
             if is_decoder_b_step:
-                input_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]
+                input_state=  self.incremental_states_b_factors[model] if model in self.models_factors else self.incremental_states_b[model]
 
                 #This structure depends on the particular model and might not work
                 #with models different from LSTM or multi-layer LSTM
@@ -1002,7 +1003,7 @@ class EnsembleModel(torch.nn.Module):
                             else:
                                 input_state[incremental_state_key][state_comp_idx][k]=state_comp_dict[k]
             else:
-                decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state=self.incremental_states_b[model] if is_decoder_b_step else self.incremental_states[model]))
+                decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state= self.incremental_states_factors[model] if model in self.models_factors else self.incremental_states[model] ))
         else:
             if self.async and is_decoder_b_step:
                 decoder_out = list(dec(tokens_in_a, encoder_out))
