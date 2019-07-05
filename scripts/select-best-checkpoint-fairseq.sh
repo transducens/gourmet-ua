@@ -8,7 +8,10 @@ VALIDATESCRIPT="$4"
 TRANSLATEARGS="$5"
 GPUS="$6"
 
+NAME=""
+if [ $# -ge 7  ]; then
 NAME="$7"
+fi
 
 if [ $# -ge 8  ]; then
 	TAGSMODE="$8"

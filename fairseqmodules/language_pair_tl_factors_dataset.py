@@ -157,7 +157,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
                 tgt_factors_async_item = torch.cat([self.tgt_factors_async[index], torch.LongTensor([eos])])
 
         d['target_factors']=tgt_factors_item
-        if tgt_factors_async_item:
+        if tgt_factors_async_item is not None:
             d['target_factors_async']=tgt_factors_async_item
         return d
 
