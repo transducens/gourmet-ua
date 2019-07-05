@@ -642,7 +642,7 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
             dropout_in=args.decoder_dropout_in,
             dropout_out=args.decoder_dropout_out,
             attention=options.eval_bool(args.decoder_attention),
-            encoder_output_units=encoder.output_units,
+            encoder_output_units=encoder_b.output_units,
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
@@ -727,8 +727,8 @@ class GRUEncoder(FairseqEncoder):
     def forward(self, src_tokens, src_lengths):
         if self.debug:
             print("forward Encoder: ")
-            print("src_lengths: {}".format(src_lengths))
-            print("src_tokens: {}".format(src_tokens))
+            print("src_lengths ({}): {}".format(src_lengths.size(),src_lengths))
+            print("src_tokens ({}): {}".format(src_tokens.size(),src_tokens))
             print("")
 
         if self.left_pad:
@@ -754,7 +754,11 @@ class GRUEncoder(FairseqEncoder):
         x = x.transpose(0, 1)
 
         # pack embedded source tokens into a PackedSequence
-        packed_x = nn.utils.rnn.pack_padded_sequence(x, src_lengths.data.tolist())
+        packed_x = nn.utils.rnn.pack_padded_sequence(x, src_lengths.data.tolist(),enforce_sorted=False)
+
+        if self.debug:
+            print("packed_x: {}".format(packed_x))
+            print("")
 
         # apply GRU
         if self.bidirectional:
@@ -766,6 +770,9 @@ class GRUEncoder(FairseqEncoder):
 
         # unpack outputs and apply dropout
         x, _ = nn.utils.rnn.pad_packed_sequence(packed_outs, padding_value=self.padding_value)
+        if self.debug:  
+            print("unpacked x ({}): {}".format(x.size(),x))
+            print("")
 
         # Since Nematus applies the same dropout mask to all timesteps inside the GRU,
         # we do the same here
@@ -988,7 +995,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
             print("GRUDecoder forward")
             print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
             print("prev_output_tokens: {}".format(prev_output_tokens))
-            print("encoder_padding_mask: {}".format(encoder_padding_mask))
+            print("encoder_padding_mask ({}): {}".format(encoder_padding_mask.size(),encoder_padding_mask))
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]
