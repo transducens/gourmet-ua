@@ -60,7 +60,7 @@ if "analyzer_sl" in config:
     interleaving_sl=True
     analyzer_sl=config["analyzer_sl"]
 
-if interleaving_tl:
+if interleaving_sl:
 	preprocessFairseqFlag=preprocessFairseqFlag+" --source-factors"
 
 LANG1=config["lang1"]
