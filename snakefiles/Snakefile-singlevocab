@@ -20,6 +20,10 @@ if "preprocessAsync" in config:
 	if config["preprocessAsync"]:
 		preprocessFairseqFlag=preprocessFairseqFlag+"--disable_bpe_marks"
 
+if "preprocessOnlyFirstSubword" in config:
+	if config["preprocessOnlyFirstSubword"]:
+		preprocessFairseqFlag=preprocessFairseqFlag+" --async_tags_surface_feed_first"
+
 
 #Output dirs
 permanentDir = config["permanentDir"]
