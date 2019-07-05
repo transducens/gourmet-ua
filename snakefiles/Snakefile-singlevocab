@@ -15,10 +15,11 @@ if "preprocessTwoDecoders" in config:
 	if config["preprocessTwoDecoders"]:
 		preprocessTwoDecoders=True
 
-preprocessAsyncFlag=""
+preprocessFairseqFlag=""
 if "preprocessAsync" in config:
 	if config["preprocessAsync"]:
-		preprocessAsyncFlag="--disable_bpe_marks"
+		preprocessFairseqFlag=preprocessFairseqFlag+"--disable_bpe_marks"
+
 
 #Output dirs
 permanentDir = config["permanentDir"]
@@ -52,6 +53,15 @@ analyzer_tl=None
 if "analyzer_tl" in config:
     interleaving_tl=True
     analyzer_tl=config["analyzer_tl"]
+
+interleaving_sl=False
+analyzer_sl=False
+if "analyzer_sl" in config:
+    interleaving_sl=True
+    analyzer_sl=config["analyzer_sl"]
+
+if interleaving_sl and preprocessTwoDecoders:
+	preprocessFairseqFlag=preprocessFairseqFlag+" --source-factors"
 
 LANG1=config["lang1"]
 LANG2=config["lang2"]
@@ -93,7 +103,7 @@ if "segParams" in config:
     segParams=config["segParams"]
 
 tokOptions="-a"
-if interleaving_tl:
+if interleaving_sl or interleaving_tl:
     tokOptions="-a -no-escape"
 tokenizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG1 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG1
 tokenizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG2
@@ -272,9 +282,9 @@ rule make_databin_fairseq:
         train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs),
         dev=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
    output:
-        modelDir+"/data-bin"
+         directory(modelDir+"/data-bin")
    shell:
-        "fairseq-preprocess --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 " if not preprocessTwoDecoders else " python3 {tools}/scripts/fairseq_preprocess_factors.py --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 --additional_decoder_tl {preprocessAsyncFlag}"
+        "fairseq-preprocess --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 " if not preprocessTwoDecoders else " python3 {tools}/scripts/fairseq_preprocess_factors.py --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 --additional_decoder_tl {preprocessFairseqFlag}"
 
 ####################################################### TRUECASE ###########################################################
 
@@ -458,7 +468,7 @@ rule apply_bpe_test:
     params:
         mark=lambda w: addMark[w.lang]
     shell:
-        "if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then  {analyzer_tl}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; {subword_nmt}/subword_nmt/apply_bpe.py --glossaries {wwMark}  -c {input.vocab} < {input.file} |  sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} > {output}"
+        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then  {analyzer_tl}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; {subword_nmt}/subword_nmt/apply_bpe.py --glossaries {wwMark}  -c {input.vocab} < {input.file} |  sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} > {output}"
 
 rule apply_bpe_train:
     input:
@@ -470,7 +480,7 @@ rule apply_bpe_train:
     params:
         mark=lambda w: addMark[w.lang]
     shell:
-        "if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi; {subword_nmt}/subword_nmt/apply_bpe.py  --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
+        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi; {subword_nmt}/subword_nmt/apply_bpe.py  --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
 
 ruleorder: learn_bpe_external > learn_bpe
 

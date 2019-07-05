@@ -28,7 +28,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         parser.add_argument('--independent-factors-models',action='store_true',help='When translating with an ensemble of models, even models (starting with 0) are used to produce factors, and odd models are used to produce surface forms.')
 
     @staticmethod
-    def load_pretrained_model(path, src_dict_path, tgt_dict_path , tgt_factors_dict_path, arg_overrides=None):
+    def load_pretrained_model(path, src_dict_path, tgt_dict_path , tgt_factors_dict_path,src_factors_dict_path, arg_overrides=None):
         model = utils.load_checkpoint_to_cpu(path)
         args = model['args']
         state_dict = model['model']
@@ -36,26 +36,38 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         src_dict = Dictionary.load(src_dict_path)
         tgt_dict = Dictionary.load(tgt_dict_path)
         tgt_factors_dict = Dictionary.load(tgt_factors_dict_path)
+        src_factors_dict=None
+        if os.path.exists(src_factors_dict_path):
+            src_factors_dict=Dictionary.load(src_factors_dict_path)
         assert src_dict.pad() == tgt_dict.pad()
         assert src_dict.eos() == tgt_dict.eos()
         assert src_dict.unk() == tgt_dict.unk()
 
-        task = TranslationTLFactorsTask(args, src_dict, tgt_dict,tgt_factors_dict)
+        task = TranslationTLFactorsTask(args, src_dict, tgt_dict,tgt_factors_dict,src_factors_dict)
         model = task.build_model(args)
         model.upgrade_state_dict(state_dict)
         model.load_state_dict(state_dict, strict=True)
         return model
 
-    def __init__(self, args, src_dict, tgt_dict, tgt_factors_dict):
+    def __init__(self, args, src_dict, tgt_dict, tgt_factors_dict,src_factors_dict=None):
         super().__init__(args, src_dict, tgt_dict)
         self.tgt_factors_dict=tgt_factors_dict
+        self.src_factors_dict=src_factors_dict
 
     @classmethod
     def setup_task(cls, args):
         parent_task= translate_early.TranslationEarlyStopTask.setup_task(args)
         tgt_factors_dict = cls.load_dictionary(os.path.join(args.data[0], 'dict.{}factors.txt'.format(args.target_lang)))
         print('| [{}] dictionary: {} types'.format(args.target_lang+"factors", len(tgt_factors_dict)))
-        return  cls(args, parent_task.src_dict, parent_task.tgt_dict, tgt_factors_dict)
+
+        #Load src factors dict if it exists
+        src_factors_dict=None
+        src_factors_dict_path=os.path.join(args.data[0], 'dict.{}factors.txt'.format(args.source_lang))
+        if os.path.exists(src_factors_dict_path):
+            src_factors_dict = cls.load_dictionary(src_factors_dict_path)
+            print('| [{}] dictionary: {} types'.format(args.source_lang+"factors", len(src_factors_dict)))
+
+        return  cls(args, parent_task.src_dict, parent_task.tgt_dict, tgt_factors_dict, src_factors_dict)
 
     def load_dataset(self, split, combine=False, **kwargs):
         """Load a given dataset split.
@@ -85,6 +97,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         tgt_datasets = []
         tgt_factors_datasets = []
         tgt_factors_async_datasets = []
+        src_factors_async_datasets = []
 
         data_paths = self.args.data
 
@@ -113,6 +126,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 tgt_datasets.append(indexed_dataset(prefix + tgt, self.tgt_dict))
                 tgt_factors_datasets.append(indexed_dataset(prefix_factors + tgt , self.tgt_factors_dict))
                 tgt_factors_async_datasets.append(indexed_dataset(prefix_factors_async + tgt , self.tgt_factors_dict))
+                src_factors_async_datasets.append(indexed_dataset(prefix_factors_async + src , self.src_factors_dict))
 
                 print('| {} {} {} examples'.format(data_path, split_k, len(src_datasets[-1])))
 
@@ -122,7 +136,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         assert len(src_datasets) == len(tgt_datasets)
 
         if len(src_datasets) == 1:
-            src_dataset, tgt_dataset , tgt_factors_dataset, tgt_factors_async_dataset = src_datasets[0], tgt_datasets[0], tgt_factors_datasets[0], tgt_factors_async_datasets[0]
+            src_dataset, tgt_dataset , tgt_factors_dataset, tgt_factors_async_dataset, src_factors_async_dataset = src_datasets[0], tgt_datasets[0], tgt_factors_datasets[0], tgt_factors_async_datasets[0], src_factors_async_datasets[0]
         else:
             sample_ratios = [1] * len(src_datasets)
             sample_ratios[0] = self.args.upsample_primary
@@ -130,6 +144,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             tgt_dataset = ConcatDataset(tgt_datasets, sample_ratios)
             tgt_factors_dataset = ConcatDataset(tgt_factors_datasets, sample_ratios)
             tgt_factors_async_dataset = ConcatDataset(tgt_factors_async_datasets, sample_ratios)
+            src_factors_async_dataset = ConcatDataset(src_factors_async_datasets, sample_ratios)
 
         self.datasets[split] = language_pair_tl_factors_dataset.LanguagePairTLFactorsDataset(
             src_dataset, src_dataset.sizes, self.src_dict,
@@ -138,7 +153,11 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             left_pad_source=self.args.left_pad_source,
             left_pad_target=self.args.left_pad_target,
             max_source_positions=self.args.max_source_positions,
-            max_target_positions=self.args.max_target_positions,tgt_factors_async=tgt_factors_async_dataset, tgt_factors_async_sizes=tgt_factors_async_dataset.sizes if tgt_factors_async_dataset else None
+            max_target_positions=self.args.max_target_positions,
+            tgt_factors_async=tgt_factors_async_dataset, tgt_factors_async_sizes=tgt_factors_async_dataset.sizes if tgt_factors_async_dataset else None,
+            src_factors_async=src_factors_async_dataset, src_factors_async_sizes=src_factors_async_dataset.sizes if src_factors_async_dataset else None,
+            src_factors_dict=self.src_factors_dict
+
         )
 
     def build_generator(self, args):
@@ -212,3 +231,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
     def target_factors_dictionary(self):
         """Return the target factors :class:`~fairseq.data.Dictionary`."""
         return self.tgt_factors_dict
+
+    @property
+    def source_factors_dictionary(self):
+        """Return the target factors :class:`~fairseq.data.Dictionary`."""
+        return self.src_factors_dict

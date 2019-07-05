@@ -14,8 +14,6 @@ from fairseq.models import (
 from fairseq.models.lstm import LSTMModel,LSTMEncoder,LSTMDecoder,base_architecture
 
 
-
-
 @register_model('bahdanau_rnn')
 class BahdanauRNNModel(LSTMModel):
 
@@ -329,6 +327,222 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             decoder_b_out = self.decoder_b(prev_output_factors, encoder_out)
         return decoder_out, decoder_b_out
 
+@register_model('bahdanau_rnn_two_encdecoders_sync')
+class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
+    def __init__(self, encoder,encoder_b, decoder, decoder_b):
+        BaseFairseqModel.__init__(self)
+        self.encoder = encoder
+        self.encoder_b = encoder_b
+        self.decoder = decoder
+        self.decoder_b = decoder_b
+        assert isinstance(self.encoder, FairseqEncoder)
+        assert isinstance(self.decoder, GRUDecoderTwoInputs)
+        assert isinstance(self.decoder_b, GRUDecoder) or isinstance(self.decoder_b, GRUDecoderTwoInputs)
+
+    @staticmethod
+    def add_args(parser):
+        """Add model-specific arguments to the parser."""
+        #Hack to call parent staticmethod
+        BahdanauRNNModel.add_args(parser)
+        parser.add_argument('--tags-condition-end', default=False, action='store_true',
+                            help='Tags condition surface form decoder only at the end, as in lexical model')
+        parser.add_argument('--surface-condition-tags', default=False, action='store_true',
+                            help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
+
+
+    @classmethod
+    def build_model(cls, args, task):
+        """Build a new model instance.
+        Encoders and decoders now are GRUs. Initialization of hidden state
+        and output layers similar to Nematus
+         """
+        # make sure that all args are properly defaulted (in case there are any new ones)
+        base_architecture(args)
+
+        if args.encoder_layers != args.decoder_layers:
+            raise ValueError('--encoder-layers must match --decoder-layers')
+
+        def load_pretrained_embedding_from_file(embed_path, dictionary, embed_dim):
+            num_embeddings = len(dictionary)
+            padding_idx = dictionary.pad()
+            embed_tokens = Embedding(num_embeddings, embed_dim, padding_idx)
+            embed_dict = utils.parse_embedding(embed_path)
+            utils.print_embed_overlap(embed_dict, dictionary)
+            return utils.load_embedding(embed_dict, dictionary, embed_tokens)
+
+        if args.encoder_embed_path:
+            pretrained_encoder_embed = load_pretrained_embedding_from_file(
+                args.encoder_embed_path, task.source_dictionary, args.encoder_embed_dim)
+        else:
+            num_embeddings = len(task.source_dictionary)
+            pretrained_encoder_embed = Embedding(
+                num_embeddings, args.encoder_embed_dim, task.source_dictionary.pad()
+            )
+
+        if args.share_all_embeddings:
+            # double check all parameters combinations are valid
+            if task.source_dictionary != task.target_dictionary:
+                raise ValueError('--share-all-embeddings requires a joint dictionary')
+            if args.decoder_embed_path and (
+                    args.decoder_embed_path != args.encoder_embed_path):
+                raise ValueError(
+                    '--share-all-embed not compatible with --decoder-embed-path'
+                )
+            if args.encoder_embed_dim != args.decoder_embed_dim:
+                raise ValueError(
+                    '--share-all-embeddings requires --encoder-embed-dim to '
+                    'match --decoder-embed-dim'
+                )
+            pretrained_decoder_embed = pretrained_encoder_embed
+            args.share_decoder_input_output_embed = True
+        else:
+            # separate decoder input embeddings
+            pretrained_decoder_embed = None
+            if args.decoder_embed_path:
+                pretrained_decoder_embed = load_pretrained_embedding_from_file(
+                    args.decoder_embed_path,
+                    task.target_dictionary,
+                    args.decoder_embed_dim
+                )
+        # one last double check of parameter combinations
+        if args.share_decoder_input_output_embed and (
+                args.decoder_embed_dim != args.decoder_out_embed_dim):
+            raise ValueError(
+                '--share-decoder-input-output-embeddings requires '
+                '--decoder-embed-dim to match --decoder-out-embed-dim'
+            )
+
+        if args.encoder_freeze_embed:
+            pretrained_encoder_embed.weight.requires_grad = False
+        if args.decoder_freeze_embed:
+            pretrained_decoder_embed.weight.requires_grad = False
+
+        encoder = GRUEncoder(
+            dictionary=task.source_dictionary,
+            embed_dim=args.encoder_embed_dim,
+            hidden_size=args.encoder_hidden_size,
+            num_layers=args.encoder_layers,
+            dropout_in=args.encoder_dropout_in,
+            dropout_out=args.encoder_dropout_out,
+            bidirectional=args.encoder_bidirectional,
+            pretrained_embed=pretrained_encoder_embed,
+            debug=args.debug if 'debug' in args else False
+        )
+
+        encoder_b = GRUEncoder(
+            dictionary=task.source_factors_dictionary,
+            embed_dim=args.encoder_embed_dim,
+            hidden_size=args.encoder_hidden_size,
+            num_layers=args.encoder_layers,
+            dropout_in=args.encoder_dropout_in,
+            dropout_out=args.encoder_dropout_out,
+            bidirectional=args.encoder_bidirectional,
+            pretrained_embed=Embedding(
+                num_embeddings, args.encoder_embed_dim, task.source_factors_dictionary.pad()
+            ),
+            debug=args.debug if 'debug' in args else False
+        )
+
+        decoder = GRUDecoderTwoInputs(
+            dictionary=task.target_dictionary,
+            dictionary_b=task.target_factors_dictionary,
+            embed_dim=args.decoder_embed_dim,
+            hidden_size=args.decoder_hidden_size,
+            out_embed_dim=args.decoder_out_embed_dim,
+            num_layers=args.decoder_layers,
+            dropout_in=args.decoder_dropout_in,
+            dropout_out=args.decoder_dropout_out,
+            attention=options.eval_bool(args.decoder_attention),
+            encoder_output_units=encoder.output_units,
+            pretrained_embed=pretrained_decoder_embed,
+            share_input_output_embed=args.share_decoder_input_output_embed,
+            b_condition_end=args.tags_condition_end,
+            cond_gru=args.cond_gru if 'cond_gru' in args else False,
+            adaptive_softmax_cutoff=(
+                options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                if args.criterion == 'adaptive_loss' else None
+            ),
+            debug=args.debug if 'debug' in args else False
+        )
+
+        if args.surface_condition_tags:
+            decoder_b = GRUDecoderTwoInputs(
+                dictionary=task.target_factors_dictionary,
+                dictionary_b=task.target_dictionary,
+                embed_dim=args.decoder_embed_dim,
+                hidden_size=args.decoder_hidden_size,
+                out_embed_dim=args.decoder_out_embed_dim,
+                num_layers=args.decoder_layers,
+                dropout_in=args.decoder_dropout_in,
+                dropout_out=args.decoder_dropout_out,
+                attention=options.eval_bool(args.decoder_attention),
+                encoder_output_units=encoder_b.output_units,
+                pretrained_embed=pretrained_decoder_embed,
+                share_input_output_embed=args.share_decoder_input_output_embed,
+                b_condition_end=args.tags_condition_end,
+                cond_gru=args.cond_gru if 'cond_gru' in args else False,
+                adaptive_softmax_cutoff=(
+                    options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                    if args.criterion == 'adaptive_loss' else None
+                ),
+                debug=args.debug if 'debug' in args else False
+            )
+        else:
+            decoder_b = GRUDecoder(
+                dictionary=task.target_factors_dictionary,
+                embed_dim=args.decoder_embed_dim,
+                hidden_size=args.decoder_hidden_size,
+                out_embed_dim=args.decoder_out_embed_dim,
+                num_layers=args.decoder_layers,
+                dropout_in=args.decoder_dropout_in,
+                dropout_out=args.decoder_dropout_out,
+                attention=options.eval_bool(args.decoder_attention),
+                encoder_output_units=encoder_b.output_units,
+                pretrained_embed=pretrained_decoder_embed,
+                share_input_output_embed=args.share_decoder_input_output_embed,
+                cond_gru=args.cond_gru if 'cond_gru' in args else False,
+                adaptive_softmax_cutoff=(
+                    options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                    if args.criterion == 'adaptive_loss' else None
+                    ),
+                debug=args.debug if 'debug' in args else False
+        )
+
+        r= cls(encoder, decoder, decoder_b)
+        return r
+
+    def get_target_factors(self, sample, net_output):
+        """Get targets from either the sample or the net's output."""
+        return sample['target_factors']
+
+    def forward(self, src_tokens, src_lengths,src_factors,src_factors_lengths, prev_output_tokens, prev_output_factors, cur_output_factors):
+        """
+        Run the forward pass for an encoder-decoder model.
+        First feed a batch of source tokens through the encoder. Then, feed the
+        encoder output and previous decoder outputs (i.e., input feeding/teacher
+        forcing) to the decoder to produce the next outputs::
+            encoder_out = self.encoder(src_tokens, src_lengths)
+            return self.decoder(prev_output_tokens, encoder_out)
+        Args:
+            src_tokens (LongTensor): tokens in the source language of shape
+                `(batch, src_len)`
+            src_lengths (LongTensor): source sentence lengths of shape `(batch)`
+            prev_output_tokens (LongTensor): previous decoder outputs of shape
+                `(batch, tgt_len)`, for input feeding/teacher forcing
+        Returns:
+            the decoder's output, typically of shape `(batch, tgt_len, vocab)`
+        """
+
+        #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
+        encoder_out = self.encoder(src_tokens, src_lengths)
+        encoder_b_out = self.encoder_b(src_factors, src_factors_lengths)
+        decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
+        if isinstance(self.decoder_b,GRUDecoderTwoInputs):
+            decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_b_out)
+        else:
+            decoder_b_out = self.decoder_b(prev_output_factors, encoder_b_out)
+        return decoder_out, decoder_b_out
+
 @register_model('bahdanau_rnn_two_decoders_async')
 class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
     def __init__(self, encoder, decoder, decoder_b):
@@ -499,6 +713,193 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
         decoder_b_out = self.decoder_b(prev_output_factors, encoder_out)
         return decoder_out, decoder_b_out
 
+@register_model('bahdanau_rnn_two_encdecoders_async')
+class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
+    def __init__(self, encoder,encoder_b, decoder, decoder_b):
+        BaseFairseqModel.__init__(self)
+        self.encoder = encoder
+        self.encoder_b = encoder_b
+        self.decoder = decoder
+        self.decoder_b = decoder_b
+        assert isinstance(self.encoder, FairseqEncoder)
+        assert isinstance(self.decoder, GRUDecoderTwoInputs)
+        assert isinstance(self.decoder_b, GRUDecoder)
+
+    @staticmethod
+    def add_args(parser):
+        """Add model-specific arguments to the parser."""
+        #Hack to call parent staticmethod
+        BahdanauRNNModel.add_args(parser)
+        parser.add_argument('--tags-condition-end', default=False, action='store_true',
+                            help='Tags condition surface form decoder only at the end, as in lexical model')
+
+
+    @classmethod
+    def build_model(cls, args, task):
+        """Build a new model instance.
+        Encoders and decoders now are GRUs. Initialization of hidden state
+        and output layers similar to Nematus
+         """
+        # make sure that all args are properly defaulted (in case there are any new ones)
+        base_architecture(args)
+
+        if args.encoder_layers != args.decoder_layers:
+            raise ValueError('--encoder-layers must match --decoder-layers')
+
+        def load_pretrained_embedding_from_file(embed_path, dictionary, embed_dim):
+            num_embeddings = len(dictionary)
+            padding_idx = dictionary.pad()
+            embed_tokens = Embedding(num_embeddings, embed_dim, padding_idx)
+            embed_dict = utils.parse_embedding(embed_path)
+            utils.print_embed_overlap(embed_dict, dictionary)
+            return utils.load_embedding(embed_dict, dictionary, embed_tokens)
+
+        if args.encoder_embed_path:
+            pretrained_encoder_embed = load_pretrained_embedding_from_file(
+                args.encoder_embed_path, task.source_dictionary, args.encoder_embed_dim)
+        else:
+            num_embeddings = len(task.source_dictionary)
+            pretrained_encoder_embed = Embedding(
+                num_embeddings, args.encoder_embed_dim, task.source_dictionary.pad()
+            )
+
+        if args.share_all_embeddings:
+            # double check all parameters combinations are valid
+            if task.source_dictionary != task.target_dictionary:
+                raise ValueError('--share-all-embeddings requires a joint dictionary')
+            if args.decoder_embed_path and (
+                    args.decoder_embed_path != args.encoder_embed_path):
+                raise ValueError(
+                    '--share-all-embed not compatible with --decoder-embed-path'
+                )
+            if args.encoder_embed_dim != args.decoder_embed_dim:
+                raise ValueError(
+                    '--share-all-embeddings requires --encoder-embed-dim to '
+                    'match --decoder-embed-dim'
+                )
+            pretrained_decoder_embed = pretrained_encoder_embed
+            args.share_decoder_input_output_embed = True
+        else:
+            # separate decoder input embeddings
+            pretrained_decoder_embed = None
+            if args.decoder_embed_path:
+                pretrained_decoder_embed = load_pretrained_embedding_from_file(
+                    args.decoder_embed_path,
+                    task.target_dictionary,
+                    args.decoder_embed_dim
+                )
+        # one last double check of parameter combinations
+        if args.share_decoder_input_output_embed and (
+                args.decoder_embed_dim != args.decoder_out_embed_dim):
+            raise ValueError(
+                '--share-decoder-input-output-embeddings requires '
+                '--decoder-embed-dim to match --decoder-out-embed-dim'
+            )
+
+        if args.encoder_freeze_embed:
+            pretrained_encoder_embed.weight.requires_grad = False
+        if args.decoder_freeze_embed:
+            pretrained_decoder_embed.weight.requires_grad = False
+
+        encoder = GRUEncoder(
+            dictionary=task.source_dictionary,
+            embed_dim=args.encoder_embed_dim,
+            hidden_size=args.encoder_hidden_size,
+            num_layers=args.encoder_layers,
+            dropout_in=args.encoder_dropout_in,
+            dropout_out=args.encoder_dropout_out,
+            bidirectional=args.encoder_bidirectional,
+            pretrained_embed=pretrained_encoder_embed,
+            debug=args.debug if 'debug' in args else False
+        )
+
+        encoder_b = GRUEncoder(
+            dictionary=task.source_factors_dictionary,
+            embed_dim=args.encoder_embed_dim,
+            hidden_size=args.encoder_hidden_size,
+            num_layers=args.encoder_layers,
+            dropout_in=args.encoder_dropout_in,
+            dropout_out=args.encoder_dropout_out,
+            bidirectional=args.encoder_bidirectional,
+            pretrained_embed=Embedding(
+                num_embeddings, args.encoder_embed_dim, task.source_factors_dictionary.pad()
+            ),
+            debug=args.debug if 'debug' in args else False
+        )
+
+        decoder = GRUDecoderTwoInputs(
+            dictionary=task.target_dictionary,
+            dictionary_b=task.target_factors_dictionary,
+            embed_dim=args.decoder_embed_dim,
+            hidden_size=args.decoder_hidden_size,
+            out_embed_dim=args.decoder_out_embed_dim,
+            num_layers=args.decoder_layers,
+            dropout_in=args.decoder_dropout_in,
+            dropout_out=args.decoder_dropout_out,
+            attention=options.eval_bool(args.decoder_attention),
+            encoder_output_units=encoder.output_units,
+            pretrained_embed=pretrained_decoder_embed,
+            share_input_output_embed=args.share_decoder_input_output_embed,
+            b_condition_end=args.tags_condition_end,
+            cond_gru=args.cond_gru if 'cond_gru' in args else False,
+            adaptive_softmax_cutoff=(
+                options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                if args.criterion == 'adaptive_loss' else None
+            ),
+            debug=args.debug if 'debug' in args else False
+        )
+
+        decoder_b = GRUDecoder(
+            dictionary=task.target_factors_dictionary,
+            embed_dim=args.decoder_embed_dim,
+            hidden_size=args.decoder_hidden_size,
+            out_embed_dim=args.decoder_out_embed_dim,
+            num_layers=args.decoder_layers,
+            dropout_in=args.decoder_dropout_in,
+            dropout_out=args.decoder_dropout_out,
+            attention=options.eval_bool(args.decoder_attention),
+            encoder_output_units=encoder_b.output_units,
+            pretrained_embed=pretrained_decoder_embed,
+            share_input_output_embed=args.share_decoder_input_output_embed,
+            cond_gru=args.cond_gru if 'cond_gru' in args else False,
+            adaptive_softmax_cutoff=(
+                options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                if args.criterion == 'adaptive_loss' else None
+            ),
+            debug=args.debug if 'debug' in args else False
+        )
+        r= cls(encoder,encoder_b, decoder, decoder_b)
+        return r
+
+    def get_target_factors(self, sample, net_output):
+        """Get targets from either the sample or the net's output."""
+        return sample['target_factors_async']
+
+
+    def forward(self, src_tokens, src_lengths ,src_factors,src_factors_lengths, prev_output_tokens, prev_output_factors, cur_output_factors):
+        """
+        Run the forward pass for an encoder-decoder model.
+        First feed a batch of source tokens through the encoder. Then, feed the
+        encoder output and previous decoder outputs (i.e., input feeding/teacher
+        forcing) to the decoder to produce the next outputs::
+            encoder_out = self.encoder(src_tokens, src_lengths)
+            return self.decoder(prev_output_tokens, encoder_out)
+        Args:
+            src_tokens (LongTensor): tokens in the source language of shape
+                `(batch, src_len)`
+            src_lengths (LongTensor): source sentence lengths of shape `(batch)`
+            prev_output_tokens (LongTensor): previous decoder outputs of shape
+                `(batch, tgt_len)`, for input feeding/teacher forcing
+        Returns:
+            the decoder's output, typically of shape `(batch, tgt_len, vocab)`
+        """
+        #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
+        encoder_out = self.encoder(src_tokens, src_lengths)
+        encoder_b_out = self.encoder_b(src_factors, src_factors_lengths)
+        decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
+        decoder_b_out = self.decoder_b(prev_output_factors, encoder_b_out)
+        return decoder_out, decoder_b_out
+
 
 class GRUEncoder(FairseqEncoder):
     """GRU encoder."""
@@ -542,8 +943,8 @@ class GRUEncoder(FairseqEncoder):
     def forward(self, src_tokens, src_lengths):
         if self.debug:
             print("forward Encoder: ")
-            print("src_lengths: {}".format(src_lengths))
-            print("src_tokens: {}".format(src_tokens))
+            print("src_lengths ({}): {}".format(src_lengths.size(),src_lengths))
+            print("src_tokens ({}): {}".format(src_tokens.size(),src_tokens))
             print("")
 
         if self.left_pad:
@@ -569,7 +970,11 @@ class GRUEncoder(FairseqEncoder):
         x = x.transpose(0, 1)
 
         # pack embedded source tokens into a PackedSequence
-        packed_x = nn.utils.rnn.pack_padded_sequence(x, src_lengths.data.tolist())
+        packed_x = nn.utils.rnn.pack_padded_sequence(x, src_lengths.data.tolist(),enforce_sorted=False)
+
+        if self.debug:
+            print("packed_x: {}".format(packed_x))
+            print("")
 
         # apply GRU
         if self.bidirectional:
@@ -581,6 +986,9 @@ class GRUEncoder(FairseqEncoder):
 
         # unpack outputs and apply dropout
         x, _ = nn.utils.rnn.pad_packed_sequence(packed_outs, padding_value=self.padding_value)
+        if self.debug:
+            print("unpacked x ({}): {}".format(x.size(),x))
+            print("")
 
         # Since Nematus applies the same dropout mask to all timesteps inside the GRU,
         # we do the same here
@@ -803,7 +1211,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
             print("GRUDecoder forward")
             print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
             print("prev_output_tokens: {}".format(prev_output_tokens))
-            print("encoder_padding_mask: {}".format(encoder_padding_mask))
+            print("encoder_padding_mask ({}): {}".format(encoder_padding_mask.size(),encoder_padding_mask))
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]
@@ -892,6 +1300,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
             else:
                 input = torch.cat((x[j, :, :], context_vector), dim=1)
 
+            #TODO: multi-layer IS WRONG
             for i, rnn in enumerate(self.layers):
                 # recurrent cell:
                 if self.cond_gru:
@@ -1285,11 +1694,20 @@ def bahdanau_rnn(args):
     args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 1024)
     args.encoder_bidirectional= getattr(args, 'encoder_bidirectional', True)
 
-@register_model_architecture('bahdanau_rnn_two_decoders_async', 'bahdanau_rnn_two_decoders_async')
+
+@register_model_architecture('bahdanau_rnn_two_encdecoders_sync', 'bahdanau_rnn_two_encdecoders_sync')
 def bahdanau_rnn(args):
     args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 1024)
     args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 1024)
     args.encoder_bidirectional= getattr(args, 'encoder_bidirectional', True)
+
+
+@register_model_architecture('bahdanau_rnn_two_encdecoders_async', 'bahdanau_rnn_two_encdecoders_async')
+def bahdanau_rnn(args):
+    args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 1024)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 1024)
+    args.encoder_bidirectional= getattr(args, 'encoder_bidirectional', True)
+
 
 @register_model_architecture('bahdanau_rnn', 'bahdanau_rnn')
 def bahdanau_rnn(args):
