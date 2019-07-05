@@ -46,6 +46,7 @@ def collate(
     prev_output_factors =None
     cur_output_factors =None
     target = None
+    prev_output_tokens_first_subword=None
 
     asyncTLFactors=False
     if samples[0].get('target', None) is not None:
@@ -99,6 +100,16 @@ def collate(
                 )
             prev_output_factors = prev_output_factors.index_select(0, sort_order)
 
+            #
+            if samples[0].get('target_only_first_subword', None) is not None:
+                prev_output_tokens_first_subword= merge(
+                    'target_only_first_subword',
+                    left_pad=left_pad_target,
+                    move_eos_to_beginning=True,
+                )
+                prev_output_tokens_first_subword = prev_output_tokens_first_subword.index_select(0, sort_order)
+
+
     else:
         ntokens = sum(len(s['source']) for s in samples)
         ntokens_a=ntokens
@@ -129,6 +140,8 @@ def collate(
         batch['net_input']['prev_output_factors'] = prev_output_factors
     if cur_output_factors is not None:
         batch['net_input']['cur_output_factors'] = cur_output_factors
+    if prev_output_tokens_first_subword is not None:
+        batch['net_input']['prev_output_tokens_first_subword'] = prev_output_tokens_first_subword
     return batch
 
 class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
@@ -147,7 +160,8 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         max_source_positions=1024, max_target_positions=1024,
         shuffle=True, input_feeding=True, remove_eos_from_source=False, append_eos_to_target=False,
         tgt_factors_async=None,tgt_factors_async_sizes=None,
-        src_factors_async=None,src_factors_async_sizes=None,src_factors_dict=None
+        src_factors_async=None,src_factors_async_sizes=None,src_factors_dict=None,
+        tgt_only_first_subword=None,tgt_only_first_subword_sizes=None
     ):
         super().__init__(src, src_sizes, src_dict,
         tgt, tgt_sizes, tgt_dict,
@@ -166,6 +180,9 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         self.src_factors_async=src_factors_async
         self.src_factors_async_sizes=src_factors_async_sizes
 
+        self.tgt_only_first_subword=tgt_only_first_subword
+        self.tgt_only_first_subword_sizes=tgt_only_first_subword_sizes
+
     def __getitem__(self, index):
         d=super().__getitem__(index)
         tgt_factors_item =self.tgt_factors[index] if self.tgt_factors is not None else None
@@ -178,6 +195,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
                 tgt_factors_async_item = torch.cat([self.tgt_factors_async[index], torch.LongTensor([eos])])
 
         src_factors_async_item=self.src_factors_async[index] if self.src_factors_async is not None else None
+        tgt_only_first_subword_item=self.tgt_only_first_subword[index] if self.tgt_only_first_subword is not None else None
 
         d['target_factors']=tgt_factors_item
         if tgt_factors_async_item is not None:
@@ -185,6 +203,9 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
 
         if src_factors_async_item is not None:
             d['source_factors_async']=src_factors_async_item
+
+        if tgt_only_first_subword_item is not None:
+            d['target_only_first_subword']=tgt_only_first_subword_item
 
         return d
 
@@ -242,7 +263,8 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
                 'target': self.tgt_dict.dummy_sentence(tgt_len) if self.tgt_dict is not None else None,
                 'target_factors':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_dict is not None else None,
                 'target_factors_async':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_async and self.tgt_factors_dict is not None else None,
-                'source_factors_async':self.src_factors_dict.dummy_sentence(src_len) if self.src_factors_async and self.src_factors_dict is not None else None
+                'source_factors_async':self.src_factors_dict.dummy_sentence(src_len) if self.src_factors_async and self.src_factors_dict is not None else None,
+                'target_only_first_subword': self.tgt_dict.dummy_sentence(tgt_len) if self.tgt_only_first_subword and self.tgt_dict is not None else None
             }
             for i in range(bsz)
         ])

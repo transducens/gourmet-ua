@@ -807,7 +807,7 @@ class EnsembleModel(torch.nn.Module):
             self.async=True
 
         self.surface_condition_tags=False
-        if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs):
+        if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) or isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) ) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs):
             self.surface_condition_tags=True
 
         if independent_factors_models:

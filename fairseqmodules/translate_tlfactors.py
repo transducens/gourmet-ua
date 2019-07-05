@@ -98,6 +98,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         tgt_factors_datasets = []
         tgt_factors_async_datasets = []
         src_factors_async_datasets = []
+        tgt_only_first_subword_datasets = []
 
         data_paths = self.args.data
 
@@ -112,10 +113,12 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                     prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, src, tgt))
                     prefix_factors=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factors", src, tgt))
                     prefix_factors_async=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"asyncfactors", src, tgt))
+                    prefix_tgt_only_first_subword=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"firstsubword", src, tgt))
                 elif split_exists(split_k, tgt, src, src, data_path):
                     prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, tgt, src))
                     prefix_factors = os.path.join(data_path, '{}.{}-{}.'.format(split_k+"factors", tgt, src))
                     prefix_factors_async = os.path.join(data_path, '{}.{}-{}.'.format(split_k+"asyncfactors", tgt, src))
+                    prefix_tgt_only_first_subword=os.path.join(data_path, '{}.{}-{}.'.format(split_k+"firstsubword", tgt, src))
                 else:
                     if k > 0 or dk > 0:
                         break
@@ -127,6 +130,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 tgt_factors_datasets.append(indexed_dataset(prefix_factors + tgt , self.tgt_factors_dict))
                 tgt_factors_async_datasets.append(indexed_dataset(prefix_factors_async + tgt , self.tgt_factors_dict))
                 src_factors_async_datasets.append(indexed_dataset(prefix_factors_async + src , self.src_factors_dict))
+                tgt_only_first_subword_datasets.append(indexed_dataset(prefix_tgt_only_first_subword + tgt , self.tgt_dict))
 
                 print('| {} {} {} examples'.format(data_path, split_k, len(src_datasets[-1])))
 
@@ -136,7 +140,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         assert len(src_datasets) == len(tgt_datasets)
 
         if len(src_datasets) == 1:
-            src_dataset, tgt_dataset , tgt_factors_dataset, tgt_factors_async_dataset, src_factors_async_dataset = src_datasets[0], tgt_datasets[0], tgt_factors_datasets[0], tgt_factors_async_datasets[0], src_factors_async_datasets[0]
+            src_dataset, tgt_dataset , tgt_factors_dataset, tgt_factors_async_dataset, src_factors_async_dataset, tgt_only_first_subword_dataset = src_datasets[0], tgt_datasets[0], tgt_factors_datasets[0], tgt_factors_async_datasets[0], src_factors_async_datasets[0], tgt_only_first_subword_datasets[0]
         else:
             sample_ratios = [1] * len(src_datasets)
             sample_ratios[0] = self.args.upsample_primary
@@ -145,6 +149,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             tgt_factors_dataset = ConcatDataset(tgt_factors_datasets, sample_ratios)
             tgt_factors_async_dataset = ConcatDataset(tgt_factors_async_datasets, sample_ratios)
             src_factors_async_dataset = ConcatDataset(src_factors_async_datasets, sample_ratios)
+            tgt_only_first_subword_dataset = ConcatDataset(tgt_only_first_subword_datasets, sample_ratios)
 
         self.datasets[split] = language_pair_tl_factors_dataset.LanguagePairTLFactorsDataset(
             src_dataset, src_dataset.sizes, self.src_dict,
@@ -156,7 +161,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             max_target_positions=self.args.max_target_positions,
             tgt_factors_async=tgt_factors_async_dataset, tgt_factors_async_sizes=tgt_factors_async_dataset.sizes if tgt_factors_async_dataset else None,
             src_factors_async=src_factors_async_dataset, src_factors_async_sizes=src_factors_async_dataset.sizes if src_factors_async_dataset else None,
-            src_factors_dict=self.src_factors_dict
+            src_factors_dict=self.src_factors_dict,
+            tgt_only_first_subword=tgt_only_first_subword_dataset,tgt_only_first_subword_sizes=tgt_only_first_subword_dataset.sizes if tgt_only_first_subword_dataset else None
 
         )
 
