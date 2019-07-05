@@ -282,7 +282,7 @@ rule make_databin_fairseq:
         train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs),
         dev=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
    output:
-        modelDir+"/data-bin"
+         directory(modelDir+"/data-bin")
    shell:
         "fairseq-preprocess --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 " if not preprocessTwoDecoders else " python3 {tools}/scripts/fairseq_preprocess_factors.py --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 --additional_decoder_tl {preprocessFairseqFlag}"
 

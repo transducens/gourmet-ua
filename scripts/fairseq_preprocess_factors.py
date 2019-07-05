@@ -282,7 +282,7 @@ def main(args):
         #For consistency, we will call the file "asyncfactors"
         #Moreoveer, make_binary_dataset will repeat interleaved tags to match bpe
         #unles the file ends in "asyncfactors"
-        make_all(args.source_lang, src_factors_dict,factors=True,asyncfactors=True)
+        make_all(args.source_lang, src_factors_dict,factors=True,async_factors=True)
     if target:
         make_all(args.target_lang, tgt_dict)
         if args.additional_decoder_tl:
