@@ -14,7 +14,7 @@ class CrossEntropyTwoDecodersCriterion(CrossEntropyCriterion):
     @staticmethod
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
-        LabelSmoothedCrossEntropyCriterion.add_args(parser)
+        CrossEntropyCriterion.add_args(parser)
         # fmt: off
         parser.add_argument('--b-decoder-weight', default=0.5, type=float,
                             help='Weight of auxiliary decoder in the loss')

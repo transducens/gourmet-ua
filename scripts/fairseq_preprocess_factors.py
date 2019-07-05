@@ -47,7 +47,7 @@ def main(args):
     def dict_path(lang):
         return dest_path("dict", lang) + ".txt"
 
-    def remove_interleaving_tags(infile,outfile,only_first_subword):
+    def remove_interleaving_tags(infile,outfile,only_first_subword=False):
         with open(infile) as in_f, open(outfile,"w") as out_f:
             for l in in_f:
                 l=l.rstrip("\n")

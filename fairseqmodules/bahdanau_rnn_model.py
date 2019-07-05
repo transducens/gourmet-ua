@@ -378,7 +378,7 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
             pretrained_encoder_embed = Embedding(
                 num_embeddings, args.encoder_embed_dim, task.source_dictionary.pad()
             )
-
+        num_embeddings_b=len(task.source_factors_dictionary)
         if args.share_all_embeddings:
             # double check all parameters combinations are valid
             if task.source_dictionary != task.target_dictionary:
@@ -438,7 +438,7 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
             dropout_out=args.encoder_dropout_out,
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=Embedding(
-                num_embeddings, args.encoder_embed_dim, task.source_factors_dictionary.pad()
+                num_embeddings_b, args.encoder_embed_dim, task.source_factors_dictionary.pad()
             ),
             debug=args.debug if 'debug' in args else False
         )
@@ -932,6 +932,7 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
             pretrained_encoder_embed = Embedding(
                 num_embeddings, args.encoder_embed_dim, task.source_dictionary.pad()
             )
+        num_embeddings_b=len(task.source_factors_dictionary)
 
         if args.share_all_embeddings:
             # double check all parameters combinations are valid
@@ -992,7 +993,7 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
             dropout_out=args.encoder_dropout_out,
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=Embedding(
-                num_embeddings, args.encoder_embed_dim, task.source_factors_dictionary.pad()
+                num_embeddings_b, args.encoder_embed_dim, task.source_factors_dictionary.pad()
             ),
             debug=args.debug if 'debug' in args else False
         )
