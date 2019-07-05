@@ -507,8 +507,7 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
                     ),
                 debug=args.debug if 'debug' in args else False
         )
-
-        r= cls(encoder, decoder, decoder_b)
+        r= cls(encoder,encoder_b, decoder, decoder_b)
         return r
 
     def get_target_factors(self, sample, net_output):
