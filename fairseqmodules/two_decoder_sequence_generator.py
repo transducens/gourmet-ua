@@ -296,7 +296,9 @@ class TwoDecoderSequenceGenerator(object):
             )
 
         # compute the encoder output for each beam
-        encoder_outs,encoder_outs_factors = model.forward_encoder(encoder_input)
+        encoder_outs,encoder_outs_factors, encoder_outs_slfactors = model.forward_encoder(encoder_input)
+
+
         #For bsz=3, beam_size=5, max_len=20
         #tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2])
         new_order = torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1)
@@ -305,6 +307,7 @@ class TwoDecoderSequenceGenerator(object):
         #One encoder out for each hypothesis
         encoder_outs = model.reorder_encoder_out(encoder_outs, new_order)
         encoder_outs_factors = model.reorder_encoder_out_factors(encoder_outs_factors, new_order)
+        encoder_outs_slfactors = model.reorder_encoder_out_slfactors(encoder_outs_slfactors, new_order)
 
         # initialize buffers
         #new: Constructs a new tensor of the same data type as self tensor.
@@ -521,6 +524,7 @@ class TwoDecoderSequenceGenerator(object):
 
                 encoder_outs=model.reorder_encoder_out(encoder_outs, reorder_state)
                 encoder_outs_factors=model.reorder_encoder_out_factors(encoder_outs_factors, reorder_state)
+                encoder_outs_slfactors=model.reorder_encoder_out_slfactors(encoder_outs_slfactors, reorder_state)
 
             if TwoDecoderSequenceGenerator.DEBUG:
                 print("Incremental state: {}".format(model.incremental_states))
@@ -537,7 +541,7 @@ class TwoDecoderSequenceGenerator(object):
 
 
             #CHANGE: call the appropriate decoder: step +1 -> step +2
-            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,encoder_outs_factors,is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
+            lprobs, avg_attn_scores = model.forward_decoder(tokens[:, :step + 2], encoder_outs,encoder_outs_factors,encoder_outs_slfactors,is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
             if is_decoder_b_step:
                 d=self.tgt_dict_b
             else:
@@ -860,15 +864,19 @@ class EnsembleModel(torch.nn.Module):
     def forward_encoder(self, encoder_input):
         if not self.has_encoder():
             return None
-        return [model.encoder(**encoder_input) for model in self.models],[model.encoder(**encoder_input) for model in self.models_factors]
+        encoder_outs_slfactors=[]
+        if 'src_factors' in encoder_input:
+            encoder_outs_slfactors=[ model.encoder_b(encoder_input['src_factors'],encoder_input['src_factors_lengths']) for model in self.models ]
+        return [model.encoder(**encoder_input) for model in self.models],[model.encoder(**encoder_input) for model in self.models_factors],encoder_outs_slfactors
 
     @torch.no_grad()
-    def forward_decoder(self, tokens, encoder_outs,encoder_outs_factors, is_decoder_b_step=False,forced_factors=None,forced_surface_forms=None,last_scores=None):
+    def forward_decoder(self, tokens, encoder_outs,encoder_outs_factors,encoder_outs_slfactors, is_decoder_b_step=False,forced_factors=None,forced_surface_forms=None,last_scores=None):
         if len(self.models)+len(self.models_factors) == 1:
             return self._decode_one(
                 tokens,
                 self.models[0],
                 encoder_outs[0] if self.has_encoder() else None,
+                encoder_outs_slfactors[0] if self.has_encoder() and len(encoder_outs_slfactors) > 0 else None,
                 self.incremental_states,
                 log_probs=True,
                 is_decoder_b_step=is_decoder_b_step,
@@ -878,11 +886,14 @@ class EnsembleModel(torch.nn.Module):
 
             )
 
+        #Not supported in ensemble mode
+        assert len(encoder_outs_slfactors) == 0
+
         log_probs = []
         avg_attn = None
 
         for model, encoder_out in zip(self.models, encoder_outs):
-            probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
+            probs, attn = self._decode_one(tokens, model, encoder_out,None, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
             if not (self.independent_factors_models and is_decoder_b_step):
                 log_probs.append(probs)
                 if attn is not None:
@@ -892,7 +903,7 @@ class EnsembleModel(torch.nn.Module):
                         avg_attn.add_(attn)
         if self.independent_factors_models:
             for model, encoder_out in zip(self.models_factors, encoder_outs_factors):
-                probs, attn = self._decode_one(tokens, model, encoder_out, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
+                probs, attn = self._decode_one(tokens, model, encoder_out,None, self.incremental_states, log_probs=True,is_decoder_b_step=is_decoder_b_step,forced_factors=forced_factors,forced_surface_forms=forced_surface_forms,last_scores=last_scores)
                 if self.independent_factors_models and is_decoder_b_step:
                     log_probs.append(probs)
                     if attn is not None:
@@ -906,7 +917,7 @@ class EnsembleModel(torch.nn.Module):
             avg_attn.div_(len(log_probs))
         return avg_probs, avg_attn
 
-    def _decode_one(self, tokens, model, encoder_out, incremental_states_do_not_use_me, log_probs,is_decoder_b_step,forced_factors,forced_surface_forms,last_scores):
+    def _decode_one(self, tokens, model, encoder_out, encoder_out_slfactors,  incremental_states_do_not_use_me, log_probs,is_decoder_b_step,forced_factors,forced_surface_forms,last_scores):
         if TwoDecoderSequenceGenerator.DEBUG:
             print("Starting _decode_one with forced_factors: {}".format(forced_factors))
         dummy_steps=[False for i in range(tokens.size(0))]
@@ -1023,9 +1034,9 @@ class EnsembleModel(torch.nn.Module):
                             else:
                                 tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end+1]
 
-                    decoder_out = list(dec(tokens_in_a, tokens_in_b_input, encoder_out, incremental_state=input_state))
+                    decoder_out = list(dec(tokens_in_a, tokens_in_b_input, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out_slfactors, incremental_state=input_state))
                 else:
-                    decoder_out = list(dec(tokens_in_a, encoder_out, incremental_state=input_state))
+                    decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out_slfactors, incremental_state=input_state))
 
                 #Restore states
                 if self.async:
@@ -1039,9 +1050,9 @@ class EnsembleModel(torch.nn.Module):
                 decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state= self.incremental_states_factors[model] if model in self.models_factors else self.incremental_states[model] ))
         else:
             if self.async and is_decoder_b_step:
-                decoder_out = list(dec(tokens_in_a, encoder_out))
+                decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out_slfactors))
             else:
-                decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out))
+                decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out_slfactors if encoder_out_slfactors and is_decoder_b_step  is not None else encoder_out_slfactors))
         decoder_out[0] = decoder_out[0][:, -1:, :]
         attn = decoder_out[1]
         if type(attn) is dict:
@@ -1082,6 +1093,13 @@ class EnsembleModel(torch.nn.Module):
         return [
             model.encoder.reorder_encoder_out(encoder_out, new_order)
             for model, encoder_out in zip(self.models_factors, encoder_outs_factors)
+        ]
+    def reorder_encoder_out_slfactors(self, encoder_outs, new_order):
+        if not self.has_encoder():
+            return
+        return [
+            model.encoder_b.reorder_encoder_out(encoder_out, new_order)
+            for model, encoder_out in zip(self.models, encoder_outs)
         ]
 
     def reorder_incremental_state(self, new_order):
