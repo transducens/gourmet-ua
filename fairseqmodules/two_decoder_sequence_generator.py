@@ -796,7 +796,7 @@ class TwoDecoderSequenceGenerator(object):
                 sf_idx=finalized[sent][0]['tokens']
                 tags_idx= finalized[sent][0]['tags']
                 if model.async:
-                    tags_idx=[ t for i,t in enumerate(tags_idx) if not self.tgt_dict(sf_idx[i]).endswith(SPLITWORDMARK)  ]
+                    tags_idx=[ t for i,t in enumerate(tags_idx) if i < len(sf_idx) and  not self.tgt_dict.string( [ sf_idx[i] ]).endswith(SPLITWORDMARK)  ]
                 print("TAGS: "+ self.tgt_dict_b.string( tags_idx  ))
 
         #Remove linguistic factors before returning
