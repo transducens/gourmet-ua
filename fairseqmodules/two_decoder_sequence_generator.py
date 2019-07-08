@@ -14,6 +14,8 @@ from fairseq.models import FairseqIncrementalDecoder
 
 from . import lstm_two_decoders_async_model,bahdanau_rnn_model
 
+SPLITWORDMARK="@@"
+
 class TwoDecoderAsyncBeamSearch(search.Search):
     def __init__(self, tgt_dict):
         super().__init__(tgt_dict)
@@ -66,7 +68,7 @@ class TwoDecoderAsyncBeamSearch(search.Search):
 
             #substract from numtags the number of non-end surface forms for each hypothesis
             tokens_sf=tokens[:,:,1::2]
-            num_non_end=[      [  len( [ t for t in c if sf_dict[t].endswith("@@")  ]  )    for c in r]   for r in tokens_sf ]
+            num_non_end=[      [  len( [ t for t in c if sf_dict[t].endswith(SPLITWORDMARK)  ]  )    for c in r]   for r in tokens_sf ]
 
             num_tags = torch.tensor(num_tags_pre,dtype=pos_scores.dtype,device=pos_scores.device)-torch.tensor(num_non_end,dtype=pos_scores.dtype,device=pos_scores.device)
 
@@ -421,7 +423,7 @@ class TwoDecoderSequenceGenerator(object):
 
                     #substract from numtags the number of non-end surface forms for each hypothesis
                     tokens_sf=tokens_clone[:,1::2]
-                    num_non_end=[  len( [ t for t in r if self.tgt_dict[t].endswith("@@")  ]  )  for r in tokens_sf ]
+                    num_non_end=[  len( [ t for t in r if self.tgt_dict[t].endswith(SPLITWORDMARK)  ]  )  for r in tokens_sf ]
                     num_tags = torch.tensor(num_tags_pre,dtype=pos_scores.dtype,device=pos_scores.device)-torch.tensor(num_non_end,dtype=pos_scores.dtype,device=pos_scores.device)
 
                     eos_scores=  torch.sum(pos_scores_sf,-1)/num_sf**self.len_penalty + torch.sum(pos_scores_tags,-1)/num_tags**self.len_penalty
@@ -791,7 +793,11 @@ class TwoDecoderSequenceGenerator(object):
                 print( self.tgt_dict_b.string( finalized[sent][0]['tags']  ))
 
             if self.only_output_factors:
-                print("TAGS: "+ self.tgt_dict_b.string( finalized[sent][0]['tags']  ))
+                sf_idx=finalized[sent][0]['tokens']
+                tags_idx= finalized[sent][0]['tags']
+                if model.async:
+                    tags_idx=[ t for i,t in enumerate(tags_idx) if not self.tgt_dict(sf_idx[i]).endswith(SPLITWORDMARK)  ]
+                print("TAGS: "+ self.tgt_dict_b.string( tags_idx  ))
 
         #Remove linguistic factors before returning
         return finalized
@@ -900,7 +906,6 @@ class EnsembleModel(torch.nn.Module):
     def _decode_one(self, tokens, model, encoder_out, incremental_states_do_not_use_me, log_probs,is_decoder_b_step,forced_factors,forced_surface_forms,last_scores):
         if TwoDecoderSequenceGenerator.DEBUG:
             print("Starting _decode_one with forced_factors: {}".format(forced_factors))
-        SPLITWORDMARK="@@"
         dummy_steps=[False for i in range(tokens.size(0))]
         forced_word_ids=None
         if is_decoder_b_step:
