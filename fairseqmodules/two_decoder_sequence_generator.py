@@ -813,8 +813,11 @@ class EnsembleModel(torch.nn.Module):
             self.async=True
 
         self.surface_condition_tags=False
+        self.tag_feedback_first_subword=False
         if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) or isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) ) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs):
             self.surface_condition_tags=True
+            if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel):
+                self.tag_feedback_first_subword=True
 
         if independent_factors_models:
             assert len(models) > 1
@@ -995,7 +998,32 @@ class EnsembleModel(torch.nn.Module):
                 if TwoDecoderSequenceGenerator.DEBUG:
                     print("Backup states: {}".format(backup_states))
                 if self.surface_condition_tags:
-                    decoder_out = list(dec(tokens_in_a, tokens_in_b, encoder_out, incremental_state=input_state))
+                    #The forward method of the decoder also selects the last token for each row
+                    #If we are working with an async decoder with feedback, we manipulate
+                    #the input and choose the first part of a BPEd word instead
+                    tokens_in_b_input=tokens_in_b[:,-1:]
+                    if self.tag_feedback_first_subword:
+                        #tokens_in_b_input is not the last subword unit, but the last beginning of subword
+                        for i in in range(tokens_in_b_input.size(0)):
+                            #Find the last beginning of word
+                            last_word_end=None
+                            word_ends=[ idx for idx,w in enumerate(tokens_in_b_input[i]) if not self.tgt_dict.string([w]).endswith(SPLITWORDMARK) ]
+                            if len(word_ends) > 0:
+                                last_word_end=word_ends[-1]
+                            #last_word_end contains the position in tokens_in_b[i] of the last bpe piece that is a word end
+                            #If last_word_end is None: no word has finished yet: feedback is first token
+                            #If last_word_end is the last position of tokens_in_b[i]: it is the feedback
+                            #Otherwise: the feedback is the token after last_word_end
+                            #This works also with padding tokens (always the first one) as it is
+                            #considered as a word end
+                            if last_word_end is None:
+                                tokens_in_b_input[i][0]=tokens_in_b[i][0]
+                            elif last_word_end == len(tokens_in_b[i])-1:
+                                tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end]
+                            else:
+                                tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end+1]
+
+                    decoder_out = list(dec(tokens_in_a, tokens_in_b_input, encoder_out, incremental_state=input_state))
                 else:
                     decoder_out = list(dec(tokens_in_a, encoder_out, incremental_state=input_state))
 
