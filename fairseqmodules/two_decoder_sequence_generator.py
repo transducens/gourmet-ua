@@ -818,7 +818,7 @@ class EnsembleModel(torch.nn.Module):
 
         self.surface_condition_tags=False
         self.tag_feedback_first_subword=False
-        if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) or isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) ) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs):
+        if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)) or  isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) or (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoEncDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)  ) :
             self.surface_condition_tags=True
             if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel):
                 self.tag_feedback_first_subword=True
@@ -1034,9 +1034,9 @@ class EnsembleModel(torch.nn.Module):
                             else:
                                 tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end+1]
 
-                    decoder_out = list(dec(tokens_in_a, tokens_in_b_input, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out_slfactors, incremental_state=input_state))
+                    decoder_out = list(dec(tokens_in_a, tokens_in_b_input, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out, incremental_state=input_state))
                 else:
-                    decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out_slfactors, incremental_state=input_state))
+                    decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out, incremental_state=input_state))
 
                 #Restore states
                 if self.async:
@@ -1050,9 +1050,9 @@ class EnsembleModel(torch.nn.Module):
                 decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out, incremental_state= self.incremental_states_factors[model] if model in self.models_factors else self.incremental_states[model] ))
         else:
             if self.async and is_decoder_b_step:
-                decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out_slfactors))
+                decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out))
             else:
-                decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out_slfactors if encoder_out_slfactors and is_decoder_b_step  is not None else encoder_out_slfactors))
+                decoder_out = list(dec(tokens_in_a,tokens_in_b, encoder_out_slfactors if encoder_out_slfactors is not None and is_decoder_b_step else encoder_out))
         decoder_out[0] = decoder_out[0][:, -1:, :]
         attn = decoder_out[1]
         if type(attn) is dict:
