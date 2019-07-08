@@ -1004,7 +1004,7 @@ class EnsembleModel(torch.nn.Module):
                     tokens_in_b_input=tokens_in_b[:,-1:]
                     if self.tag_feedback_first_subword:
                         #tokens_in_b_input is not the last subword unit, but the last beginning of subword
-                        for i in in range(tokens_in_b_input.size(0)):
+                        for i in range(tokens_in_b_input.size(0)):
                             #Find the last beginning of word
                             last_word_end=None
                             word_ends=[ idx for idx,w in enumerate(tokens_in_b_input[i]) if not self.tgt_dict.string([w]).endswith(SPLITWORDMARK) ]
