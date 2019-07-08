@@ -252,8 +252,8 @@ class TwoDecoderSequenceGenerator(object):
 
         if model.async:
             #overwrite search instances
-            self.search = TwoDecoderAsyncBeamSearch(tgt_dict)
-            self.search_b = TwoDecoderAsyncBeamSearch(tgt_dict_b)
+            self.search = TwoDecoderAsyncBeamSearch(self.tgt_dict)
+            self.search_b = TwoDecoderAsyncBeamSearch(self.tgt_dict_b)
 
 
         # model.forward normally channels prev_output_tokens into the decoder
