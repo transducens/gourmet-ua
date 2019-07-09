@@ -816,7 +816,7 @@ class EnsembleModel(torch.nn.Module):
     def __init__(self, models,tgt_dict,tgt_dict_b,independent_factors_models=False):
         super().__init__()
         self.async=False
-        if isinstance(models[0],lstm_two_decoders_async_model.LSTMTwoDecodersAsyncModel) or isinstance(models[0],  bahdanau_rnn_model.BahdanauRNNTwoDecodersAsyncModel):
+        if isinstance(models[0],lstm_two_decoders_async_model.LSTMTwoDecodersAsyncModel) or isinstance(models[0],  bahdanau_rnn_model.BahdanauRNNTwoDecodersAsyncModel) or isinstance(models[0],  bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel):
             self.async=True
 
         self.surface_condition_tags=False
