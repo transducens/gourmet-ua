@@ -52,6 +52,8 @@ def make_batches(lines, args, task, max_positions):
         ]
         lengths = torch.LongTensor([t.numel() for t in tokens])
         lengths_factors=torch.LongTensor([t.numel() for t in tokens_factors])
+        #print("Making batches from lines_sf: {}".format( lines_sf))
+        #print("Making batches from lines_factors: {}".format( lines_factors))
 
     else:
         tokens = [
@@ -154,8 +156,8 @@ def main(args):
             }
 
             if src_factors is not None and src_factors_lengths is not None:
-                src_factors = src_tokens.cuda()
-                src_factors_lengths = src_lengths.cuda()
+                src_factors = src_factors.cuda()
+                src_factors_lengths = src_factors_lengths.cuda()
 
                 sample['net_input']['src_factors']=src_factors
                 sample['net_input']['src_factors_lengths']=src_factors_lengths

@@ -868,7 +868,7 @@ class EnsembleModel(torch.nn.Module):
         encoder_outs_slfactors=[]
         if 'src_factors' in encoder_input:
             encoder_outs_slfactors=[ model.encoder_b(encoder_input['src_factors'],encoder_input['src_factors_lengths']) for model in self.models ]
-        return [model.encoder(**encoder_input) for model in self.models],[model.encoder(**encoder_input) for model in self.models_factors],encoder_outs_slfactors
+        return [model.encoder(encoder_input['src_tokens'],encoder_input['src_lengths']) for model in self.models],[model.encoder(encoder_input['src_tokens'],encoder_input['src_lengths']) for model in self.models_factors],encoder_outs_slfactors
 
     @torch.no_grad()
     def forward_decoder(self, tokens, encoder_outs,encoder_outs_factors,encoder_outs_slfactors, is_decoder_b_step=False,forced_factors=None,forced_surface_forms=None,last_scores=None):
