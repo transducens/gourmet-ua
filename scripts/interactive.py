@@ -50,7 +50,7 @@ def make_batches(lines, args, task, max_positions):
             task.source_factors_dictionary.encode_line(src_str, add_if_not_exist=False).long()
             for src_str in lines_factors
         ]
-        lengths = torch.LongTensor([t.numel() for t in tokens_sf])
+        lengths = torch.LongTensor([t.numel() for t in tokens])
         lengths_factors=torch.LongTensor([t.numel() for t in tokens_factors])
 
     else:
