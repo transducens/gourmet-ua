@@ -1,6 +1,9 @@
 #! /bin/bash
 set -euo pipefail
 
+MYFULLPATH=$(readlink -f $0)
+CURDIR=$(dirname $MYFULLPATH)
+
 CHECKPOINTDIR="$1"
 DEVSL="$2"
 DATABIN="$3"
@@ -24,7 +27,7 @@ SCORESFILE="scores$NAME"
 rm -f $CHECKPOINTDIR/$SCORESFILE
 for CP in $CHECKPOINTDIR/checkpoint*.pt ; do
   # Translate and evaluate
-  SCORE=$( CUDA_VISIBLE_DEVICES=$GPUS fairseq-interactive $TRANSLATEARGS  --input $DEVSL --path $CP $DATABIN | tee $CP.output$NAME.raw  |  {  if [ "$TAGSMODE" != "tags"  ]; then  cat - | grep '^H-' | cut -f 3 ; else  cat - | grep '^TAGS:'| cut -f 2- -d ' ' ; fi  } | tee $CP.output$NAME | $VALIDATESCRIPT )
+  SCORE=$( CUDA_VISIBLE_DEVICES=$GPUS python3 $CURDIR/interactive.py $TRANSLATEARGS  --input $DEVSL --path $CP $DATABIN | tee $CP.output$NAME.raw  |  {  if [ "$TAGSMODE" != "tags"  ]; then  cat - | grep '^H-' | cut -f 3 ; else  cat - | grep '^TAGS:'| cut -f 2- -d ' ' ; fi  } | tee $CP.output$NAME | $VALIDATESCRIPT )
   echo "$CP $SCORE" >> $CHECKPOINTDIR/scores$NAME
 done
 

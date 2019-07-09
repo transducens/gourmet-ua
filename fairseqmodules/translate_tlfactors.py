@@ -219,6 +219,13 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
 
             )
 
+    def build_dataset_for_inference(self, src_tokens, src_lengths, src_factors, src_factors_lengths):
+        if src_factors is not None and src_factors_lengths is not None:
+            return language_pair_tl_factors_dataset.LanguagePairTLFactorsDataset(src_tokens, src_lengths, self.source_dictionary,src_factors_async=src_factors, src_factors_async_sizes=src_factors_lengths,src_factors_dict=self.source_factors_dictionary)
+        else:
+            return LanguagePairDataset(src_tokens, src_lengths, self.source_dictionary)
+
+
     def inference_step(self, generator, models, sample, prefix_tokens=None):
         with torch.no_grad():
             batch_size=sample['net_input']['src_tokens'].size(0)

@@ -139,7 +139,7 @@ if backend == Backend.FAIRSEQ:
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
 if backend == Backend.FAIRSEQ:
-		translateCmd = "CUDA_VISIBLE_DEVICES={} fairseq-interactive {}".format(gpuIdCuda, translateArgs)
+		translateCmd = "CUDA_VISIBLE_DEVICES={} python3 {tools}/scripts/interactive.py {}".format(gpuIdCuda, translateArgs)
 		validateScript=config["validateScript"]
 
 
