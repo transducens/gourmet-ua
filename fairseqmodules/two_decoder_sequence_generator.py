@@ -188,7 +188,7 @@ class TwoDecoderSequenceGenerator(object):
                 length (default: False)
         """
 
-        DEBUG=debug
+        TwoDecoderSequenceGenerator.DEBUG=debug
 
         #pad, unk and eos have the same indexes in all dictionaries.
         # See: https://github.com/pytorch/fairseq/blob/v0.6.2/fairseq/data/dictionary.py
@@ -1021,7 +1021,7 @@ class EnsembleModel(torch.nn.Module):
                         for i in range(tokens_in_b_input.size(0)):
                             #Find the last beginning of word
                             last_word_end=None
-                            word_ends=[ idx for idx,w in enumerate(tokens_in_b_input[i]) if not self.tgt_dict.string([w]).endswith(SPLITWORDMARK) ]
+                            word_ends=[ idx for idx,w in enumerate(tokens_in_b[i]) if not self.tgt_dict.string([w]).endswith(SPLITWORDMARK) ]
                             if len(word_ends) > 0:
                                 last_word_end=word_ends[-1]
                             #last_word_end contains the position in tokens_in_b[i] of the last bpe piece that is a word end
