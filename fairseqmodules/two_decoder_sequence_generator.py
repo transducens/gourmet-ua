@@ -274,6 +274,7 @@ class TwoDecoderSequenceGenerator(object):
         beam_size = self.beam_size
 
         if TwoDecoderSequenceGenerator.DEBUG:
+            print("Starting generate() encoder_input: {}".format(encoder_input))
             print("Starting generate() with forced_factors: {}".format(forced_factors))
 
         #It is tricky to force factors when input batch size > 1

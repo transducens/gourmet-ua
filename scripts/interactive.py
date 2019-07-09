@@ -153,7 +153,7 @@ def main(args):
                 },
             }
 
-            if src_factors and src_factors_lengths:
+            if src_factors is not None and src_factors_lengths is not None:
                 src_factors = src_tokens.cuda()
                 src_factors_lengths = src_lengths.cuda()
 

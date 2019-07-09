@@ -46,6 +46,7 @@ def collate(
     prev_output_factors =None
     cur_output_factors =None
     target = None
+    target_factors=None
     prev_output_tokens_first_subword=None
 
     asyncTLFactors=False
