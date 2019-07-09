@@ -153,7 +153,8 @@ class TwoDecoderSequenceGenerator(object):
         match_source_len=False,
         no_repeat_ngram_size=0,
         only_output_factors=False,
-        separate_factors_sf_models=False
+        separate_factors_sf_models=False,
+        debug=False
     ):
         """Generates translations of a given source sentence.
         Args:
@@ -187,6 +188,7 @@ class TwoDecoderSequenceGenerator(object):
                 length (default: False)
         """
 
+        DEBUG=debug
 
         #pad, unk and eos have the same indexes in all dictionaries.
         # See: https://github.com/pytorch/fairseq/blob/v0.6.2/fairseq/data/dictionary.py

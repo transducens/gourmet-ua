@@ -26,6 +26,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         parser.add_argument('--force-factors',help='File that contains the factors that must be included in the output')
         parser.add_argument('--force-surface-forms',help='File that contains the surface forms that must be included in the output')
         parser.add_argument('--independent-factors-models',action='store_true',help='When translating with an ensemble of models, even models (starting with 0) are used to produce factors, and odd models are used to produce surface forms.')
+        parser.add_argument('--debug-beam-search',action='store_true',help='Print debug information during beam search')
 
     @staticmethod
     def load_pretrained_model(path, src_dict_path, tgt_dict_path , tgt_factors_dict_path,src_factors_dict_path, arg_overrides=None):
@@ -215,8 +216,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 match_source_len=args.match_source_len,
                 no_repeat_ngram_size=args.no_repeat_ngram_size,
                 only_output_factors=args.print_factors,
-                separate_factors_sf_models=args.independent_factors_models
-
+                separate_factors_sf_models=args.independent_factors_models,
+                debug=args.debug_beam_search
             )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, src_factors, src_factors_lengths):
