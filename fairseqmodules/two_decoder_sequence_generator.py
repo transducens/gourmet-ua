@@ -1034,7 +1034,8 @@ class EnsembleModel(torch.nn.Module):
                                 tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end]
                             else:
                                 tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end+1]
-
+                    if TwoDecoderSequenceGenerator.DEBUG:
+                        print("After adjusting inputs for async: words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b_input ] ))
                     decoder_out = list(dec(tokens_in_a, tokens_in_b_input, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out, incremental_state=input_state))
                 else:
                     decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out, incremental_state=input_state))
