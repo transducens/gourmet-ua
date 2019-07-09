@@ -1033,7 +1033,14 @@ class EnsembleModel(torch.nn.Module):
                             if last_word_end is None:
                                 tokens_in_b_input[i][0]=tokens_in_b[i][0]
                             elif last_word_end == len(tokens_in_b[i])-1:
-                                tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end]
+                                if len(word_ends) > 1:
+                                    #The penultimate token is also a word end
+                                    if last_word_end-1 == word_ends[-2]:
+                                        tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end]
+                                    else:
+                                        tokens_in_b_input[i][0]=tokens_in_b[i][word_ends[-2]+1]
+                                else:
+                                    tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end]
                             else:
                                 tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end+1]
                     if TwoDecoderSequenceGenerator.DEBUG:
