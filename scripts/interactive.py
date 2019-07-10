@@ -19,6 +19,8 @@ from fairseq import data, options, tasks, tokenizer, utils
 from fairseq.sequence_generator import SequenceGenerator
 from fairseq.utils import import_user_module
 
+
+
 Batch = namedtuple('Batch', 'ids src_tokens src_lengths src_factors src_factors_lengths')
 Translation = namedtuple('Translation', 'src_str hypos pos_scores alignments')
 
@@ -37,7 +39,7 @@ def buffered_read(input, buffer_size):
 
 
 def make_batches(lines, args, task, max_positions):
-    if task.source_factors_dictionary:
+    if hasattr(task,'source_factors_dictionary') and  task.source_factors_dictionary:
         lines_sf= [" ".join([t for t in src_str.split() if not t.startswith("interleaved_") ])
         for src_str in lines]
         lines_factors=[" ".join([t for t in src_str.split() if t.startswith("interleaved_") ])
@@ -64,8 +66,12 @@ def make_batches(lines, args, task, max_positions):
         lengths = torch.LongTensor([t.numel() for t in tokens])
         lengths_factors=None
 
+    try:
+        ds=task.build_dataset_for_inference(tokens, lengths,tokens_factors,lengths_factors)
+    except TypeError:
+        ds=task.build_dataset_for_inference(tokens, lengths)
     itr = task.get_batch_iterator(
-        dataset=task.build_dataset_for_inference(tokens, lengths,tokens_factors,lengths_factors),
+        dataset=ds,
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
         max_positions=max_positions,
