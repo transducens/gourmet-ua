@@ -146,6 +146,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='Tags condition surface form decoder only at the end, as in lexical model')
         parser.add_argument('--surface-condition-tags', default=False, action='store_true',
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
+        parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
+                            help='Both decoders share embeddings')
 
 
     @classmethod
@@ -192,16 +194,23 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                     'match --decoder-embed-dim'
                 )
             pretrained_decoder_embed = pretrained_encoder_embed
+            pretrained_decoder_embed_b = pretrained_encoder_embed
             args.share_decoder_input_output_embed = True
         else:
             # separate decoder input embeddings
             pretrained_decoder_embed = None
+            pretrained_decoder_embed_b = None
             if args.decoder_embed_path:
                 pretrained_decoder_embed = load_pretrained_embedding_from_file(
                     args.decoder_embed_path,
                     task.target_dictionary,
                     args.decoder_embed_dim
                 )
+            if args.share_embeddings_two_decoders:
+                if pretrained_decoder_embed is None:
+                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
+
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
                 args.decoder_embed_dim != args.decoder_out_embed_dim):
@@ -239,6 +248,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
+            pretrained_embed_b=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
             b_condition_end=args.tags_condition_end,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
@@ -261,7 +271,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 dropout_out=args.decoder_dropout_out,
                 attention=options.eval_bool(args.decoder_attention),
                 encoder_output_units=encoder.output_units,
-                pretrained_embed=pretrained_decoder_embed,
+                pretrained_embed=pretrained_decoder_embed_b,
+                pretrained_embed_b=pretrained_decoder_embed,
                 share_input_output_embed=args.share_decoder_input_output_embed,
                 b_condition_end=args.tags_condition_end,
                 cond_gru=args.cond_gru if 'cond_gru' in args else False,
@@ -282,7 +293,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 dropout_out=args.decoder_dropout_out,
                 attention=options.eval_bool(args.decoder_attention),
                 encoder_output_units=encoder.output_units,
-                pretrained_embed=pretrained_decoder_embed,
+                pretrained_embed=pretrained_decoder_embed_b,
                 share_input_output_embed=args.share_decoder_input_output_embed,
                 cond_gru=args.cond_gru if 'cond_gru' in args else False,
                 adaptive_softmax_cutoff=(
@@ -346,6 +357,8 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
                             help='Tags condition surface form decoder only at the end, as in lexical model')
         parser.add_argument('--surface-condition-tags', default=False, action='store_true',
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
+        parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
+                            help='Both decoders share embeddings')
 
 
     @classmethod
@@ -392,16 +405,22 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
                     'match --decoder-embed-dim'
                 )
             pretrained_decoder_embed = pretrained_encoder_embed
+            pretrained_decoder_embed_b = pretrained_encoder_embed
             args.share_decoder_input_output_embed = True
         else:
             # separate decoder input embeddings
             pretrained_decoder_embed = None
+            pretrained_decoder_embed_b=None
             if args.decoder_embed_path:
                 pretrained_decoder_embed = load_pretrained_embedding_from_file(
                     args.decoder_embed_path,
                     task.target_dictionary,
                     args.decoder_embed_dim
                 )
+            if args.share_embeddings_two_decoders:
+                if pretrained_decoder_embed is None:
+                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
                 args.decoder_embed_dim != args.decoder_out_embed_dim):
@@ -453,6 +472,7 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
+            pretrained_embed_b=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
             b_condition_end=args.tags_condition_end,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
@@ -475,7 +495,8 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
                 dropout_out=args.decoder_dropout_out,
                 attention=options.eval_bool(args.decoder_attention),
                 encoder_output_units=encoder_b.output_units,
-                pretrained_embed=pretrained_decoder_embed,
+                pretrained_embed=pretrained_decoder_embed_b,
+                pretrained_embed_b=pretrained_decoder_embed,
                 share_input_output_embed=args.share_decoder_input_output_embed,
                 b_condition_end=args.tags_condition_end,
                 cond_gru=args.cond_gru if 'cond_gru' in args else False,
@@ -496,7 +517,7 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
                 dropout_out=args.decoder_dropout_out,
                 attention=options.eval_bool(args.decoder_attention),
                 encoder_output_units=encoder_b.output_units,
-                pretrained_embed=pretrained_decoder_embed,
+                pretrained_embed=pretrained_decoder_embed_b,
                 share_input_output_embed=args.share_decoder_input_output_embed,
                 cond_gru=args.cond_gru if 'cond_gru' in args else False,
                 adaptive_softmax_cutoff=(
@@ -558,6 +579,8 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
         BahdanauRNNModel.add_args(parser)
         parser.add_argument('--tags-condition-end', default=False, action='store_true',
                             help='Tags condition surface form decoder only at the end, as in lexical model')
+        parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
+                            help='Both decoders share embeddings')
 
 
     @classmethod
@@ -604,16 +627,23 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
                     'match --decoder-embed-dim'
                 )
             pretrained_decoder_embed = pretrained_encoder_embed
+            pretrained_decoder_embed_b=pretrained_encoder_embed
             args.share_decoder_input_output_embed = True
         else:
             # separate decoder input embeddings
             pretrained_decoder_embed = None
+            pretrained_decoder_embed_b = None
             if args.decoder_embed_path:
                 pretrained_decoder_embed = load_pretrained_embedding_from_file(
                     args.decoder_embed_path,
                     task.target_dictionary,
                     args.decoder_embed_dim
                 )
+            if args.share_embeddings_two_decoders:
+                if pretrained_decoder_embed is None:
+                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
+
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
                 args.decoder_embed_dim != args.decoder_out_embed_dim):
@@ -651,6 +681,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
+            pretrained_embed_b=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
             b_condition_end=args.tags_condition_end,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
@@ -671,7 +702,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
             dropout_out=args.decoder_dropout_out,
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder.output_units,
-            pretrained_embed=pretrained_decoder_embed,
+            pretrained_embed=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
             adaptive_softmax_cutoff=(
@@ -728,6 +759,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         BahdanauRNNModel.add_args(parser)
         parser.add_argument('--tags-condition-end', default=False, action='store_true',
                             help='Tags condition surface form decoder only at the end, as in lexical model')
+        parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
+                            help='Both decoders share embeddings')
 
 
     @classmethod
@@ -774,16 +807,22 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                     'match --decoder-embed-dim'
                 )
             pretrained_decoder_embed = pretrained_encoder_embed
+            pretrained_decoder_embed_b = pretrained_encoder_embed
             args.share_decoder_input_output_embed = True
         else:
             # separate decoder input embeddings
             pretrained_decoder_embed = None
+            pretrained_decoder_embed_b = None
             if args.decoder_embed_path:
                 pretrained_decoder_embed = load_pretrained_embedding_from_file(
                     args.decoder_embed_path,
                     task.target_dictionary,
                     args.decoder_embed_dim
                 )
+            if args.share_embeddings_two_decoders:
+                if pretrained_decoder_embed is None:
+                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
                 args.decoder_embed_dim != args.decoder_out_embed_dim):
@@ -900,6 +939,8 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
         BahdanauRNNModel.add_args(parser)
         parser.add_argument('--tags-condition-end', default=False, action='store_true',
                             help='Tags condition surface form decoder only at the end, as in lexical model')
+        parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
+                            help='Both decoders share embeddings')
 
 
     @classmethod
@@ -947,16 +988,22 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
                     'match --decoder-embed-dim'
                 )
             pretrained_decoder_embed = pretrained_encoder_embed
+            pretrained_decoder_embed_b = pretrained_encoder_embed
             args.share_decoder_input_output_embed = True
         else:
             # separate decoder input embeddings
             pretrained_decoder_embed = None
+            pretrained_decoder_embed_b = None
             if args.decoder_embed_path:
                 pretrained_decoder_embed = load_pretrained_embedding_from_file(
                     args.decoder_embed_path,
                     task.target_dictionary,
                     args.decoder_embed_dim
                 )
+            if args.share_embeddings_two_decoders:
+                if pretrained_decoder_embed is None:
+                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
                 args.decoder_embed_dim != args.decoder_out_embed_dim):
@@ -1008,6 +1055,7 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
+            pretrained_embed_b=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
             b_condition_end=args.tags_condition_end,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
@@ -1028,7 +1076,7 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
             dropout_out=args.decoder_dropout_out,
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder_b.output_units,
-            pretrained_embed=pretrained_decoder_embed,
+            pretrained_embed=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
             adaptive_softmax_cutoff=(
@@ -1554,7 +1602,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
     def __init__(
         self, dictionary,dictionary_b, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
-        encoder_output_units=512, pretrained_embed=None,
+        encoder_output_units=512, pretrained_embed=None, pretrained_embed_b=None,
         share_input_output_embed=False, b_condition_end=False , cond_gru=False , adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
@@ -1575,19 +1623,21 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         padding_idx = dictionary.pad()
         padding_idx_b = dictionary_b.pad()
 
-        #At the moment, both embeddings have the same size
-        self.embed_tokens_b=Embedding(num_embeddings_b, embed_dim, padding_idx_b)
-
         if pretrained_embed is None:
             self.embed_tokens = Embedding(num_embeddings, embed_dim, padding_idx)
         else:
             self.embed_tokens = pretrained_embed
 
+        if pretrained_embed_b is None:
+            #At the moment, both embeddings have the same size
+            self.embed_tokens_b=Embedding(num_embeddings_b, embed_dim, padding_idx_b)
+        else:
+            self.embed_tokens_b=pretrained_embed_b
+
         self.encoder_output_units = encoder_output_units
 
         #linear + tanh for initial state
         #TODO: we are assuming encoder is always bidirectional
-        #TODO: Linear ignores dropout!!
         self.linear_initial_state=Linear(encoder_output_units,hidden_size,dropout=dropout_in)
         self.activ_initial_state=nn.Tanh()
 
