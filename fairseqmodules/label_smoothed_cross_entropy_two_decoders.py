@@ -1,7 +1,7 @@
 import math
 from fairseq.criterions import register_criterion
 from fairseq.criterions.label_smoothed_cross_entropy import LabelSmoothedCrossEntropyCriterion
-
+from torch.distributions.bernoulli import Bernoulli
 from fairseq import utils
 
 @register_criterion('label_smoothed_cross_entropy_two_decoders')
@@ -10,6 +10,7 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         super().__init__(args, task)
         self.b_weight = args.b_decoder_weight
         self.debug=args.debug_loss
+        self.ignore_tags_distr=  Bernoulli(torch.tensor([args.tags_dropout]))
 
     @staticmethod
     def add_args(parser):
@@ -18,10 +19,12 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         # fmt: off
         parser.add_argument('--b-decoder-weight', default=0.5, type=float,
                             help='Weight of auxiliary decoder in the loss')
+        parser.add_argument('--tags-dropout', default=0.0, type=float,
+                            help='Not optimize the tags output of a minitatch with this probability')
         parser.add_argument('--debug-loss', action='store_true',
                             help='Show debug information about how loss is computed for each minibatch')
 
-    def forward(self, model, sample, reduce=True):
+    def forward(self, model, sample, reduce=True, training=True):
         """Compute the loss for the given sample.
         Returns a tuple with three elements:
         1) the loss
@@ -40,12 +43,22 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         loss_b, nll_loss_b = self.compute_loss_factors(model, net_output_b, sample, reduce=reduce)
 
         #We might have problems here when the number of TL factors is different from the number of TL tokens
-        loss=loss_a*(1-self.b_weight)*2+loss_b*self.b_weight*2
-        nll_loss=nll_loss_a*(1-self.b_weight)*2+nll_loss_b*self.b_weight*2
+
+        ignoreTags=False
+        if training:
+            if self.ignore_tags_distr.sample()[0] == 1.0:
+                ignoreTags=True
+
+        loss=loss_a*(1-self.b_weight)*2
+        nll_loss=nll_loss_a*(1-self.b_weight)*2
+
+        if not ignoreTags:
+            loss+=loss_b*self.b_weight*2
+            nll_loss+=nll_loss_b*self.b_weight*2
 
         if self.args.sentence_avg:
             raise NotImplementedError
-        sample_size = sample['target'].size(0) if self.args.sentence_avg else sample['ntokens']
+        sample_size = sample['target'].size(0) if self.args.sentence_avg else (sample['ntokens'] if not ignoreTags else sample['ntokens_a'])
         sample_size_a = sample['target'].size(0) if self.args.sentence_avg else sample['ntokens_a']
         sample_size_b = sample['target'].size(0) if self.args.sentence_avg else sample['ntokens_b']
 

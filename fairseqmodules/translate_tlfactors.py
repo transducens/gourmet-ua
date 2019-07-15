@@ -241,6 +241,37 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
 
             return generator.generate(models, sample, prefix_tokens=prefix_tokens,forced_factors=input_forced_factors,forced_surface_forms=input_forced_surface_forms)
 
+    def train_step(self, sample, model, criterion, optimizer, ignore_grad=False):
+        """
+        Do forward and backward, and return the loss as computed by *criterion*
+        for the given *model* and *sample*.
+        Args:
+            sample (dict): the mini-batch. The format is defined by the
+                :class:`~fairseq.data.FairseqDataset`.
+            model (~fairseq.models.BaseFairseqModel): the model
+            criterion (~fairseq.criterions.FairseqCriterion): the criterion
+            optimizer (~fairseq.optim.FairseqOptimizer): the optimizer
+            ignore_grad (bool): multiply loss by 0 if this is set to True
+        Returns:
+            tuple:
+                - the loss
+                - the sample size, which is used as the denominator for the
+                  gradient
+                - logging outputs to display while training
+        """
+        model.train()
+        loss, sample_size, logging_output = criterion(model, sample,training=True)
+        if ignore_grad:
+            loss *= 0
+        optimizer.backward(loss)
+        return loss, sample_size, logging_output
+
+    def valid_step(self, sample, model, criterion):
+        model.eval()
+        with torch.no_grad():
+            loss, sample_size, logging_output = criterion(model, sample, training=False)
+        return loss, sample_size, logging_output
+
     @property
     def target_factors_dictionary(self):
         """Return the target factors :class:`~fairseq.data.Dictionary`."""
