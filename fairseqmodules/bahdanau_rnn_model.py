@@ -208,7 +208,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 )
             if args.share_embeddings_two_decoders:
                 if pretrained_decoder_embed is None:
-                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                    pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
                 pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
 
         # one last double check of parameter combinations
@@ -419,7 +419,7 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
                 )
             if args.share_embeddings_two_decoders:
                 if pretrained_decoder_embed is None:
-                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                    pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
                 pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
@@ -641,7 +641,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
                 )
             if args.share_embeddings_two_decoders:
                 if pretrained_decoder_embed is None:
-                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                    pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
                 pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
 
         # one last double check of parameter combinations
@@ -821,7 +821,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                 )
             if args.share_embeddings_two_decoders:
                 if pretrained_decoder_embed is None:
-                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                    pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
                 pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
@@ -1002,7 +1002,7 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
                 )
             if args.share_embeddings_two_decoders:
                 if pretrained_decoder_embed is None:
-                    pretrainned_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                    pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
                 pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
