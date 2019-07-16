@@ -267,6 +267,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         return loss, sample_size, logging_output
 
     def valid_step(self, sample, model, criterion):
+        self.after_valid_flag=True
         model.eval()
         with torch.no_grad():
             loss, sample_size, logging_output = criterion(model, sample, training=False)
