@@ -860,7 +860,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                 num_layers=args.encoder_layers,
                 dropout_in=args.encoder_dropout_in,
                 dropout_out=args.encoder_dropout_out,
-                bidirectional=False
+                bidirectional=False,
                 pretrained_embed=pretrained_decoder_embed,
                 debug=args.debug if 'debug' in args else False
             )
@@ -1639,7 +1639,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         self.adaptive_softmax = None
         num_embeddings = len(dictionary)
-        num_embeddings_b=len(dictionary_b)
+        num_embeddings_b=len(dictionary_b) if dictionary_b else None
         padding_idx = dictionary.pad()
         padding_idx_b = dictionary_b.pad() if dictionary_b else None
 
