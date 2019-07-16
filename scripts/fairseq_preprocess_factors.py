@@ -189,7 +189,7 @@ def main(args):
                 if output_prefix.endswith("asyncfactors"):
                     retain_interleaving_tags(input_file,input_temp_file,add_mark=False, match_bpe=False)
                 else:
-                    retain_interleaving_tags(input_file,input_temp_file,not args.disable_bpe_marks)
+                    retain_interleaving_tags(input_file,input_temp_file,add_mark=not args.disable_bpe_marks)
             input_file=input_temp_file
 
 

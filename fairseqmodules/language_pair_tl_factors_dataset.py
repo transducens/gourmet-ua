@@ -215,6 +215,8 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         if tgt_only_first_subword_item is not None:
             d['target_only_first_subword']=tgt_only_first_subword_item
 
+        d['position_target_word_ends']=[ i for i,w in enumerate(tgt_factors_item) if not self.tgt_dict.string([w]).endswith("@@") ]
+
         return d
 
     def collater(self, samples):

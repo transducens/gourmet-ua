@@ -935,6 +935,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
 
         if self.feedback_encoder is not None:
             second_input_decoder_b=self.feedback_encoder(prev_output_tokens, prev_output_tokens_lengths)
+            #TODO: index select
         else:
             second_input_decoder_b=prev_output_tokens_first_subword
         encoder_out = self.encoder(src_tokens, src_lengths)
