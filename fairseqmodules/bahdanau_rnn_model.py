@@ -1717,6 +1717,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]
+            #TODO: careful with this at decoding time
             prev_output_tokens_b=prev_output_tokens_b[:, -1:]
         bsz, seqlen = prev_output_tokens.size()
 
@@ -1733,7 +1734,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             x_b=self.embed_tokens_b(prev_output_tokens_b)
         else:
             #x_b represents a hidden state
-            feedback_encoder_outs, feedback_encoder_outs = prev_output_tokens_b[:2]
+            feedback_encoder_outs, feedback_encoder_outs = prev_output_tokens_b['encoder_out'][:2]
             #shape of feedback_encoder_outs: (seq_len,bsz,hidden_size)
             x_b=feedback_encoder_outs.transpose(0, 1)
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
