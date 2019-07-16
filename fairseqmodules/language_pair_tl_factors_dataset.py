@@ -43,6 +43,7 @@ def collate(
         src_factors_lengths=src_factors_lengths.index_select(0, sort_order)
 
     prev_output_tokens = None
+    prev_output_tokens_lengths = None
     prev_output_factors =None
     cur_output_factors =None
     target = None
@@ -93,6 +94,10 @@ def collate(
                     left_pad=left_pad_target,
                     move_eos_to_beginning=True,
                 )
+
+                prev_output_tokens_lengths=torch.LongTensor([s['target'].numel() for s in samples])
+                prev_output_tokens_lengths=prev_output_tokens_lengths.index_select(0, sort_order)
+
             else:
                 prev_output_factors = merge(
                     'target_factors',
@@ -143,6 +148,8 @@ def collate(
         batch['net_input']['cur_output_factors'] = cur_output_factors
     if prev_output_tokens_first_subword is not None:
         batch['net_input']['prev_output_tokens_first_subword'] = prev_output_tokens_first_subword
+    if prev_output_tokens_lengths is not None:
+        batch['net_input']['prev_output_tokens_lengths'] = prev_output_tokens_lengths
     return batch
 
 class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):

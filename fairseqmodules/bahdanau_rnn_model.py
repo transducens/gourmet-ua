@@ -743,11 +743,12 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
 
 @register_model('bahdanau_rnn_two_decoders_mutual_influence_async')
 class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
-    def __init__(self, encoder, decoder, decoder_b):
+    def __init__(self, encoder, decoder, decoder_b, feedback_encoder):
         BaseFairseqModel.__init__(self)
         self.encoder = encoder
         self.decoder = decoder
         self.decoder_b = decoder_b
+        self.feedback_encoder= feedback_encoder
         assert isinstance(self.encoder, FairseqEncoder)
         assert isinstance(self.decoder, GRUDecoderTwoInputs)
         assert isinstance(self.decoder_b, GRUDecoderTwoInputs)
@@ -759,6 +760,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         BahdanauRNNModel.add_args(parser)
         parser.add_argument('--tags-condition-end', default=False, action='store_true',
                             help='Tags condition surface form decoder only at the end, as in lexical model')
+        parser.add_argument('--feedback-encoder', default=False, action='store_true',
+                            help='Use an encoder to condense all the previous surface forms.')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
 
@@ -848,6 +851,20 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             debug=args.debug if 'debug' in args else False
         )
 
+        feedback_encoder=None
+        if args.feedback_encoder:
+            feedback_encoder = GRUEncoder(
+                dictionary=task.target_dictionary,
+                embed_dim=args.encoder_embed_dim,
+                hidden_size=args.encoder_hidden_size,
+                num_layers=args.encoder_layers,
+                dropout_in=args.encoder_dropout_in,
+                dropout_out=args.encoder_dropout_out,
+                bidirectional=False
+                pretrained_embed=pretrained_decoder_embed,
+                debug=args.debug if 'debug' in args else False
+            )
+
         decoder = GRUDecoderTwoInputs(
             dictionary=task.target_dictionary,
             dictionary_b=task.target_factors_dictionary,
@@ -872,7 +889,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
 
         decoder_b = GRUDecoderTwoInputs(
             dictionary=task.target_factors_dictionary,
-            dictionary_b=task.target_dictionary,
+            dictionary_b=task.target_dictionary if not args.feedback_encoder else None, # empty dictionary means that we do not need to apply embeddings to second output
             embed_dim=args.decoder_embed_dim,
             hidden_size=args.decoder_hidden_size,
             out_embed_dim=args.decoder_out_embed_dim,
@@ -890,14 +907,14 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
-        r= cls(encoder, decoder, decoder_b)
+        r= cls(encoder, decoder, decoder_b, feedback_encoder)
         return r
 
     def get_target_factors(self, sample, net_output):
         """Get targets from either the sample or the net's output."""
         return sample['target_factors_async']
 
-    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors,prev_output_tokens_first_subword):
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors,prev_output_tokens_first_subword, prev_output_tokens_lengths):
         """
         Run the forward pass for an encoder-decoder model.
         First feed a batch of source tokens through the encoder. Then, feed the
@@ -915,9 +932,12 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             the decoder's output, typically of shape `(batch, tgt_len, vocab)`
         """
         #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
+        second_input_decoder_b=prev_output_tokens_first_subword
+        if self.feedback_encoder:
+            second_input_decoder_b=self.feedback_encoder(prev_output_tokens, prev_output_tokens_lengths)
         encoder_out = self.encoder(src_tokens, src_lengths)
         decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
-        decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens_first_subword, encoder_out)
+        decoder_b_out = self.decoder_b(prev_output_factors,second_input_decoder_b, encoder_out)
         return decoder_out, decoder_b_out
 
 @register_model('bahdanau_rnn_two_encdecoders_async')
@@ -1621,7 +1641,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         num_embeddings = len(dictionary)
         num_embeddings_b=len(dictionary_b)
         padding_idx = dictionary.pad()
-        padding_idx_b = dictionary_b.pad()
+        padding_idx_b = dictionary_b.pad() if dictionary_b else None
 
         if pretrained_embed is None:
             self.embed_tokens = Embedding(num_embeddings, embed_dim, padding_idx)
@@ -1629,8 +1649,10 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.embed_tokens = pretrained_embed
 
         if pretrained_embed_b is None:
-            #At the moment, both embeddings have the same size
-            self.embed_tokens_b=Embedding(num_embeddings_b, embed_dim, padding_idx_b)
+            if dictionary_b:
+                #At the moment, both embeddings have the same size
+                self.embed_tokens_b=Embedding(num_embeddings_b, embed_dim, padding_idx_b)
+            self.embed_tokens_b=None
         else:
             self.embed_tokens_b=pretrained_embed_b
 
@@ -1645,7 +1667,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.layers = nn.ModuleList([
                 # LSTM used custom initialization here
                 nn.GRUCell(
-                    input_size=( (encoder_output_units + embed_dim*2) if not self.b_condition_end else (encoder_output_units + embed_dim) ) if layer == 0 else hidden_size,
+                    input_size=( (encoder_output_units + embed_dim + (embed_dim if self.embed_tokens_b else hidden_size) ) if not self.b_condition_end else (encoder_output_units + embed_dim) ) if layer == 0 else hidden_size,
                     hidden_size=hidden_size,
                 )
                 for layer in range(num_layers)
@@ -1659,19 +1681,18 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.attention=None
             self.layers = nn.ModuleList([
                 ConditionalGru(
-                    input_embed_dim=embed_dim*2 if not self.b_condition_end else embed_dim,
+                    input_embed_dim=embed_dim+(embed_dim if self.embed_tokens_b else hidden_size) if not self.b_condition_end else embed_dim,
                     source_context_dim=encoder_output_units,
                     hidden_dim=hidden_size,
                 )
                 for layer in range(num_layers)
             ])
 
-
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
         self.logit_prev=Linear(embed_dim*2 if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
         if self.b_condition_end:
-            self.logit_tag = Linear(embed_dim, out_embed_dim, dropout=dropout_out)
+            self.logit_tag = Linear((embed_dim if self.embed_tokens_b else hidden_size), out_embed_dim, dropout=dropout_out)
         self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
         self.activ_deep_output=nn.Tanh()
 
@@ -1708,7 +1729,13 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         x = F.dropout(x, p=self.dropout_in, training=self.training)
 
         #embed additional tokens
-        x_b=self.embed_tokens_b(prev_output_tokens_b)
+        if self.embed_tokens_b:
+            x_b=self.embed_tokens_b(prev_output_tokens_b)
+        else:
+            #x_b represents a hidden state
+            feedback_encoder_outs, feedback_encoder_outs = prev_output_tokens_b[:2]
+            #shape of feedback_encoder_outs: (seq_len,bsz,hidden_size)
+            x_b=feedback_encoder_outs.transpose(0, 1)
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
         logit_tag_input=x_b
 
