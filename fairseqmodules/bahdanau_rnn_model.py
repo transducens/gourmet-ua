@@ -1710,6 +1710,9 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         encoder_out = encoder_out_dict['encoder_out']
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
 
+        if not self.embed_tokens_b:
+            prev_output_tokens_b, feedback_encoder_hiddens = prev_output_tokens_b['encoder_out'][:2]
+
         if self.debug:
             print("GRUDecoderTwoInputs forward")
             print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
@@ -1737,9 +1740,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             x_b=self.embed_tokens_b(prev_output_tokens_b)
         else:
             #x_b represents a hidden state
-            feedback_encoder_outs, feedback_encoder_outs = prev_output_tokens_b['encoder_out'][:2]
-            #shape of feedback_encoder_outs: (seq_len,bsz,hidden_size)
-            x_b=feedback_encoder_outs.transpose(0, 1)
+            #shape of feedback_encoder_outs=prev_output_tokens_b: (seq_len,bsz,hidden_size)
+            x_b=prev_output_tokens_b.transpose(0, 1)
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
         logit_tag_input=x_b
 
