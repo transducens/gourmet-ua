@@ -1654,7 +1654,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             if dictionary_b:
                 #At the moment, both embeddings have the same size
                 self.embed_tokens_b=Embedding(num_embeddings_b, embed_dim, padding_idx_b)
-            self.embed_tokens_b=None
+            else:
+                self.embed_tokens_b=None
         else:
             self.embed_tokens_b=pretrained_embed_b
 
