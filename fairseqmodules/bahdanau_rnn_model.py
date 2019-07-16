@@ -1693,7 +1693,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
-        self.logit_prev=Linear(embed_dim*2 if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
+        self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else hidden_size)) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
         if self.b_condition_end:
             self.logit_tag = Linear((embed_dim if self.embed_tokens_b else hidden_size), out_embed_dim, dropout=dropout_out)
         self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
