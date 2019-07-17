@@ -821,10 +821,17 @@ class EnsembleModel(torch.nn.Module):
 
         self.surface_condition_tags=False
         self.tag_feedback_first_subword=False
+        self.tag_feedback_encoder=False
+        self.tag_feedback_state_and_last_subword=False
         if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)) or  isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) or (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoEncDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)  ) :
             self.surface_condition_tags=True
             if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel):
-                self.tag_feedback_first_subword=True
+                if models[0].feedback_encoder:
+                    self.tag_feedback_encoder=True
+                elif models[0].feedback_state_and_last_subword:
+                    self.tag_feedback_state_and_last_subword=True
+                else:
+                    self.tag_feedback_first_subword=True
 
         if independent_factors_models:
             assert len(models) > 1
@@ -1043,6 +1050,15 @@ class EnsembleModel(torch.nn.Module):
                                     tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end]
                             else:
                                 tokens_in_b_input[i][0]=tokens_in_b[i][last_word_end+1]
+                    if self.tag_feedback_encoder:
+                        #TODO: this is very slow, as we are re-encoding the whole sequence at each timestep
+                        #Run encoder with tokens_in_b and pass it
+                        #tokens_in_b:  (bsz, seq_len)
+                        feedback_encoder_out=model.feedback_encoder(tokens_in_b,[tokens_in_b.size(1) for i in range(tokens_in_b.size(0))])
+                        feedback_encoder_outs, feedback_encoder_hiddens = feedback_encoder_out['encoder_out'][:2]
+                        tokens_in_b_input=feedback_encoder_outs.transpose(0, 1)
+                        #now (bsz,seq_len,hidden_size)
+
                     if TwoDecoderSequenceGenerator.DEBUG:
                         print("After adjusting inputs for async: words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b_input ] ))
                     decoder_out = list(dec(tokens_in_a, tokens_in_b_input, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out, incremental_state=input_state))
