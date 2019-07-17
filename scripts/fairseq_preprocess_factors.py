@@ -52,7 +52,7 @@ def main(args):
             for l in in_f:
                 l=l.rstrip("\n")
                 toks=l.split()
-                outstr=" ".join([  t for i,t in enumerate(toks) if not t.startswith("interleaved_") and (toks[i-1].startswith("interleaved_") or not only_first_subword  and ( not t.endswith("@@")  or not only_last_subword) ])
+                outstr=" ".join([  t for i,t in enumerate(toks) if not t.startswith("interleaved_") and (toks[i-1].startswith("interleaved_") or not only_first_subword)  and ( not t.endswith("@@")  or not only_last_subword) ])
                 out_f.write(outstr)
                 out_f.write("\n")
 
