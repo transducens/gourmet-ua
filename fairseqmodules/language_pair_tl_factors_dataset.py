@@ -227,7 +227,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         if tgt_only_first_subword_item is not None:
             d['target_only_first_subword']=tgt_only_first_subword_item
 
-        d['position_target_word_ends']=[ i for i,w in enumerate(tgt_factors_item) if not self.tgt_dict.string([w]).endswith("@@") ]
+        d['position_target_word_ends']=[ i for i,w in enumerate(d['target']) if len(self.tgt_dict.string([w]).strip()) > 0 and  not self.tgt_dict.string([w]).endswith("@@") ]
 
         return d
 
@@ -287,7 +287,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
                 'target_factors_async':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_async and self.tgt_factors_dict is not None else None,
                 'source_factors_async':self.src_factors_dict.dummy_sentence(src_len) if self.src_factors_async and self.src_factors_dict is not None else None,
                 'target_only_first_subword': self.tgt_dict.dummy_sentence(tgt_len) if self.tgt_only_first_subword and self.tgt_dict is not None else None,
-                'position_target_word_ends': [ i for i in range(tgt_len) ]
+                'position_target_word_ends': [ i for i in range(tgt_len-1) ]
             }
             for i in range(bsz)
         ])
