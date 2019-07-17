@@ -24,6 +24,11 @@ if "preprocessOnlyFirstSubword" in config:
 	if config["preprocessOnlyFirstSubword"]:
 		preprocessFairseqFlag=preprocessFairseqFlag+" --async_tags_surface_feed_first"
 
+if "preprocessOnlyLastSubword" in config:
+	if config["preprocessOnlyLastSubword"]:
+		preprocessFairseqFlag=preprocessFairseqFlag+" --async_tags_surface_feed_last"
+
+
 
 #Output dirs
 permanentDir = config["permanentDir"]
