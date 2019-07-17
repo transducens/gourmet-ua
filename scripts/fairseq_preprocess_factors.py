@@ -47,12 +47,12 @@ def main(args):
     def dict_path(lang):
         return dest_path("dict", lang) + ".txt"
 
-    def remove_interleaving_tags(infile,outfile,only_first_subword=False):
+    def remove_interleaving_tags(infile,outfile,only_first_subword=False,only_last_subword=False):
         with open(infile) as in_f, open(outfile,"w") as out_f:
             for l in in_f:
                 l=l.rstrip("\n")
                 toks=l.split()
-                outstr=" ".join([  t for i,t in enumerate(toks) if not t.startswith("interleaved_") and (toks[i-1].startswith("interleaved_") or not only_first_subword ) ])
+                outstr=" ".join([  t for i,t in enumerate(toks) if not t.startswith("interleaved_") and (toks[i-1].startswith("interleaved_") or not only_first_subword  and ( not t.endswith("@@")  or not only_last_subword) ])
                 out_f.write(outstr)
                 out_f.write("\n")
 
@@ -184,7 +184,7 @@ def main(args):
             input_temp_file_obj.close()
             input_temp_file=input_temp_file_obj.name
             if not output_prefix.endswith("factors"):
-                remove_interleaving_tags(input_file,input_temp_file,only_first_subword= output_prefix.endswith("firstsubword"))
+                remove_interleaving_tags(input_file,input_temp_file,only_first_subword= output_prefix.endswith("firstsubword"),only_last_subword= output_prefix.endswith("lastsubword"))
             else:
                 if output_prefix.endswith("asyncfactors"):
                     retain_interleaving_tags(input_file,input_temp_file,add_mark=False, match_bpe=False)
@@ -259,15 +259,18 @@ def main(args):
             )
             shutil.copyfile(file_name(input_prefix, lang), output_text_file)
 
-    def make_all(lang, vocab, factors=False, async_factors=False, only_first_subword=False):
+    def make_all(lang, vocab, factors=False, async_factors=False, only_first_subword=False, only_last_subword=False):
+        assert not (only_first_subword and only_last_subword)
         prefsuf=""
         if factors:
             if async_factors:
                 prefsuf="asyncfactors"
             else:
                 prefsuf="factors"
-        if only_first_subword:
+        if only_first_subword and not only_last_subword:
             prefsuf="firstsubword"
+        if only_last_subword and not only_first_subword:
+            prefsuf="lastsubword"
         if args.trainpref:
             make_dataset(vocab, args.trainpref, "train{}".format(prefsuf), lang, num_workers=args.workers)
         if args.validpref:
@@ -295,6 +298,9 @@ def main(args):
                 if args.async_tags_surface_feed_first:
                     #Create an additional version that contains only the first subword of each TL word
                     make_all(args.target_lang, tgt_factors_dict, only_first_subword=True)
+                if args.async_tags_surface_feed_last:
+                    #Create an additional version that contains only the first subword of each TL word
+                    make_all(args.target_lang, tgt_factors_dict, only_last_subword=True)
     print("| Wrote preprocessed data to {}".format(args.destdir))
 
     if args.alignfile:
@@ -386,6 +392,7 @@ def cli_main():
     parser.add_argument('--additional_decoder_tl', action='store_true',help='Add an additional decoder instead of interleaving')
     parser.add_argument('--disable_bpe_marks', action='store_true',help='Disable BPE marks on factors')
     parser.add_argument('--async_tags_surface_feed_first', action='store_true',help='Tags async decoder will receive the first subword of the previously generated surface form.')
+    parser.add_argument('--async_tags_surface_feed_last', action='store_true',help='Tags async decoder will receive the last subword of the previously generated surface form.')
     parser.add_argument('--source-factors', action='store_true',help='SL text contains interleaved factors')
     args = parser.parse_args()
     main(args)

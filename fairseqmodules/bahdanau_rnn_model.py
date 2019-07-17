@@ -743,12 +743,13 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
 
 @register_model('bahdanau_rnn_two_decoders_mutual_influence_async')
 class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
-    def __init__(self, encoder, decoder, decoder_b, feedback_encoder):
+    def __init__(self, encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword):
         BaseFairseqModel.__init__(self)
         self.encoder = encoder
         self.decoder = decoder
         self.decoder_b = decoder_b
         self.feedback_encoder= feedback_encoder
+        self.feedback_state_and_last_subword=feedback_state_and_last_subword
         assert isinstance(self.encoder, FairseqEncoder)
         assert isinstance(self.decoder, GRUDecoderTwoInputs)
         assert isinstance(self.decoder_b, GRUDecoderTwoInputs)
@@ -762,6 +763,10 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                             help='Tags condition surface form decoder only at the end, as in lexical model')
         parser.add_argument('--feedback-encoder', default=False, action='store_true',
                             help='Use an encoder to condense all the previous surface forms.')
+        parser.add_argument('--feedback-state-and-last-subword', default=False, action='store_true',
+                            help='Use concatenation of decoder hidden state and last subword for feedback to tags decoder.')
+        parser.add_argument('--transform-last-state', default=False, action='store_true',
+                            help='When using concatenation of decoder hidden state and last subword for feedback to tags decoder, apply MLP to transfom state.')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
 
@@ -774,6 +779,9 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
          """
         # make sure that all args are properly defaulted (in case there are any new ones)
         base_architecture(args)
+
+        if args.feedback_state_and_last_subword and not args.share_embeddings_two_decoders:
+            raise ValueError('--feedback_state_and_last_subword must match --share_embeddings_two_decoders')
 
         if args.encoder_layers != args.decoder_layers:
             raise ValueError('--encoder-layers must match --decoder-layers')
@@ -887,9 +895,15 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             debug=args.debug if 'debug' in args else False
         )
 
+        size_input_b=None
+        if args.feedback_encoder:
+            size_input_b=feedback_encoder.hidden_size
+        elif args.feedback_state_and_last_subword:
+            size_input_b=(decoder.hidden_size + args.decoder_embed_dim)
         decoder_b = GRUDecoderTwoInputs(
             dictionary=task.target_factors_dictionary,
-            dictionary_b=task.target_dictionary if not args.feedback_encoder else None, # empty dictionary means that we do not need to apply embeddings to second output
+            dictionary_b=task.target_dictionary if (not args.feedback_encoder and not args.feedback_state_and_last_subword ) else None, # empty dictionary means that we do not need to apply embeddings to second output
+            size_input_b=size_input_b,
             embed_dim=args.decoder_embed_dim,
             hidden_size=args.decoder_hidden_size,
             out_embed_dim=args.decoder_out_embed_dim,
@@ -907,14 +921,14 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
-        r= cls(encoder, decoder, decoder_b, feedback_encoder)
+        r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword=feedback_state_and_last_subword)
         return r
 
     def get_target_factors(self, sample, net_output):
         """Get targets from either the sample or the net's output."""
         return sample['target_factors_async']
 
-    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors,prev_output_tokens_first_subword, prev_output_tokens_lengths,prev_output_tokens_word_end_positions ):
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors,prev_output_tokens_first_subword, prev_output_tokens_lengths,prev_output_tokens_word_end_positions,prev_output_tokens_last_subword ):
         """
         Run the forward pass for an encoder-decoder model.
         First feed a batch of source tokens through the encoder. Then, feed the
@@ -933,6 +947,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         """
         #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
 
+        encoder_out = self.encoder(src_tokens, src_lengths)
+        decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
         if self.feedback_encoder is not None:
             feedback_encoder_out=self.feedback_encoder(prev_output_tokens, prev_output_tokens_lengths)
             feedback_encoder_outs, feedback_encoder_hiddens = feedback_encoder_out['encoder_out'][:2]
@@ -952,10 +968,20 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                 #second_input_decoder_b[batch_idx].index_copy_(0,prev_output_tokens_word_end_positions[batch_idx],feedback_encoder_outs[batch_idx])
                 for seq_pos_idx,original_pos in enumerate(prev_output_tokens_word_end_positions[batch_idx]):
                     second_input_decoder_b[batch_idx,seq_pos_idx,:]=feedback_encoder_outs[batch_idx,original_pos,:]
-        else:
-            second_input_decoder_b=prev_output_tokens_first_subword
-        encoder_out = self.encoder(src_tokens, src_lengths)
-        decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
+        elif self.feedback_state_and_last_subword:
+            #( seq_len,bsz,hidden_size )
+            all_hiddens_last_layer=torch.stack(decoder_out[2])
+            #( bsz,seq_len+1,hidden_size )
+            all_hiddens_last_layer=all_hiddens_last_layer.transpose(0,1)
+
+            second_input_decoder_b_a= decoder_out[0].new_zeros([all_hiddens_last_layer.size(0),prev_output_factors.size(1),all_hiddens_last_layer.size(2)])
+            for batch_idx in range(len(prev_output_tokens_word_end_positions)):
+                for seq_pos_idx,original_pos in enumerate(prev_output_tokens_word_end_positions[batch_idx]):
+                    second_input_decoder_b_a[batch_idx,seq_pos_idx,:]=all_hiddens_last_layer[batch_idx,original_pos,:]
+
+            second_input_decoder_b_b=self.decoder.embed_tokens(prev_output_tokens_last_subword)
+
+            second_input_decoder_b=torch.cat((second_input_decoder_b_a,second_input_decoder_b_b),-1)
         decoder_b_out = self.decoder_b(prev_output_factors,second_input_decoder_b, encoder_out)
         return decoder_out, decoder_b_out
 
@@ -1639,7 +1665,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
 class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
     """GRU decoder."""
     def __init__(
-        self, dictionary,dictionary_b, embed_dim=512, hidden_size=512, out_embed_dim=512,
+        self, dictionary,dictionary_b,size_input_b=None, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None, pretrained_embed_b=None,
         share_input_output_embed=False, b_condition_end=False , cond_gru=False , adaptive_softmax_cutoff=None,debug=False
@@ -1687,7 +1713,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.layers = nn.ModuleList([
                 # LSTM used custom initialization here
                 nn.GRUCell(
-                    input_size=( (encoder_output_units + embed_dim + (embed_dim if self.embed_tokens_b else hidden_size) ) if not self.b_condition_end else (encoder_output_units + embed_dim) ) if layer == 0 else hidden_size,
+                    input_size=( (encoder_output_units + embed_dim + (embed_dim if self.embed_tokens_b else size_input_b) ) if not self.b_condition_end else (encoder_output_units + embed_dim) ) if layer == 0 else hidden_size,
                     hidden_size=hidden_size,
                 )
                 for layer in range(num_layers)
@@ -1701,7 +1727,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.attention=None
             self.layers = nn.ModuleList([
                 ConditionalGru(
-                    input_embed_dim=embed_dim+(embed_dim if self.embed_tokens_b else hidden_size) if not self.b_condition_end else embed_dim,
+                    input_embed_dim=embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim,
                     source_context_dim=encoder_output_units,
                     hidden_dim=hidden_size,
                 )
@@ -1710,9 +1736,9 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
-        self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else hidden_size) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
+        self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
         if self.b_condition_end:
-            self.logit_tag = Linear((embed_dim if self.embed_tokens_b else hidden_size), out_embed_dim, dropout=dropout_out)
+            self.logit_tag = Linear((embed_dim if self.embed_tokens_b else size_input_b), out_embed_dim, dropout=dropout_out)
         self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
         self.activ_deep_output=nn.Tanh()
 
@@ -1768,6 +1794,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
 
+        all_hiddens_last_layer=[]
+
         # initialize previous states (or get from cache during incremental generation)
         cached_state = utils.get_incremental_state(self, incremental_state, 'cached_state')
         if cached_state is not None:
@@ -1801,6 +1829,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             #TODO: All layers have the same initial state: problematic!!!!
             prev_hiddens=[hidden for i in range(num_layers)]
 
+        all_hiddens_last_layer.append(prev_hiddens[-1])
         attn_scores = x.new_zeros(srclen, seqlen, bsz)
         outs = []
         context_vectors=[]
@@ -1827,6 +1856,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             else:
                 input = torch.cat((x[j, :, :], context_vector), dim=1)
 
+            #TODO: multi-layer IS WRONG
             assert len(self.layers) == 1
             for i, rnn in enumerate(self.layers):
                 if self.cond_gru:
@@ -1846,6 +1876,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
             # save final output
             outs.append(out)
+            all_hiddens_last_layer.append(out)
 
         # cache previous states (no-op except during incremental generation)
         utils.set_incremental_state(
@@ -1886,7 +1917,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 x = self.fc_out(x)
 
         #print("Forward pass.\nx({}):{}\nattn_scores:{}".format(x.size(),x,attn_scores))
-        return x, attn_scores
+        return x, attn_scores,all_hiddens_last_layer
 
     def reorder_incremental_state(self, incremental_state, new_order):
         super().reorder_incremental_state(incremental_state, new_order)
