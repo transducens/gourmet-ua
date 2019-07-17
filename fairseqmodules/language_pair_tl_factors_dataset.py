@@ -286,7 +286,8 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
                 'target_factors':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_dict is not None else None,
                 'target_factors_async':self.tgt_factors_dict.dummy_sentence(tgt_len) if self.tgt_factors_async and self.tgt_factors_dict is not None else None,
                 'source_factors_async':self.src_factors_dict.dummy_sentence(src_len) if self.src_factors_async and self.src_factors_dict is not None else None,
-                'target_only_first_subword': self.tgt_dict.dummy_sentence(tgt_len) if self.tgt_only_first_subword and self.tgt_dict is not None else None
+                'target_only_first_subword': self.tgt_dict.dummy_sentence(tgt_len) if self.tgt_only_first_subword and self.tgt_dict is not None else None,
+                'position_target_word_ends': [ i for i in range(tgt_len) ]
             }
             for i in range(bsz)
         ])
