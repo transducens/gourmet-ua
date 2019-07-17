@@ -939,7 +939,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             #shape of feedback_encoder_outs=prev_output_tokens_b: (seq_len,bsz,hidden_size)
             feedback_encoder_outs=feedback_encoder_outs.transpose(0, 1)
             #now (bsz,seq_len,hidden_size)
-            
+
             #print("Creating input for decoder B from additional RNN")
             #print("prev_output_tokens_word_end_positions: {}".format(prev_output_tokens_word_end_positions))
             #print("prev_output_tokens_word_end_positions lengths: {}".format([len(l) for l in prev_output_tokens_word_end_positions]))
@@ -949,8 +949,9 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             #New input has same size as prev_output_factors
             second_input_decoder_b= feedback_encoder_outs.new_zeros([feedback_encoder_outs.size(0),prev_output_factors.size(1),feedback_encoder_outs.size(2)])
             for batch_idx in range(len(prev_output_tokens_word_end_positions)):
-                for seq_pos_idx,original_pos in enumerate(prev_output_tokens_word_end_positions[batch_idx]):
-                    second_input_decoder_b[batch_idx,seq_pos_idx,:]=feedback_encoder_outs[batch_idx,original_pos,:]
+                second_input_decoder_b[batch_idx].index_copy_(0,prev_output_tokens_word_end_positions[batch_idx],feedback_encoder_outs[batch_idx])
+                #for seq_pos_idx,original_pos in enumerate(prev_output_tokens_word_end_positions[batch_idx]):
+                #    second_input_decoder_b[batch_idx,seq_pos_idx,:]=feedback_encoder_outs[batch_idx,original_pos,:]
         else:
             second_input_decoder_b=prev_output_tokens_first_subword
         encoder_out = self.encoder(src_tokens, src_lengths)
