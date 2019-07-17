@@ -49,6 +49,7 @@ def collate(
     target = None
     target_factors=None
     prev_output_tokens_first_subword=None
+    prev_output_tokens_word_end_positions=None
 
     asyncTLFactors=False
     if samples[0].get('target', None) is not None:
@@ -97,6 +98,15 @@ def collate(
 
                 prev_output_tokens_lengths=torch.LongTensor([s['target'].numel() for s in samples])
                 prev_output_tokens_lengths=prev_output_tokens_lengths.index_select(0, sort_order)
+
+                #fill field position_target_word_ends
+                #1. sort according to sort_order
+                prev_output_tokens_word_end_positions_unsorted=[ s['position_target_word_ends'] for s in samples ]
+                prev_output_tokens_word_end_positions=[ prev_output_tokens_word_end_positions_unsorted[i] for i in sort_order ]
+
+                #2. shift one position because prev_output_tokens were shifted too
+                for i in range(len(prev_output_tokens_word_end_positions)):
+                    prev_output_tokens_word_end_positions[i]=[ 0 ] + [ p+1 for p in  prev_output_tokens_word_end_positions[i]]
 
             else:
                 prev_output_factors = merge(
@@ -150,6 +160,8 @@ def collate(
         batch['net_input']['prev_output_tokens_first_subword'] = prev_output_tokens_first_subword
     if prev_output_tokens_lengths is not None:
         batch['net_input']['prev_output_tokens_lengths'] = prev_output_tokens_lengths
+    if prev_output_tokens_word_end_positions is not None:
+        batch['net_input']['prev_output_tokens_word_end_positions'] = prev_output_tokens_word_end_positions
     return batch
 
 class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):

@@ -914,7 +914,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         """Get targets from either the sample or the net's output."""
         return sample['target_factors_async']
 
-    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors,prev_output_tokens_first_subword, prev_output_tokens_lengths):
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors,prev_output_tokens_first_subword, prev_output_tokens_lengths,prev_output_tokens_word_end_positions ):
         """
         Run the forward pass for an encoder-decoder model.
         First feed a batch of source tokens through the encoder. Then, feed the
@@ -934,8 +934,18 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
 
         if self.feedback_encoder is not None:
-            second_input_decoder_b=self.feedback_encoder(prev_output_tokens, prev_output_tokens_lengths)
-            #TODO: index select
+            feedback_encoder_out=self.feedback_encoder(prev_output_tokens, prev_output_tokens_lengths)
+            feedback_encoder_outs, feedback_encoder_hiddens = feedback_encoder_out['encoder_out'][:2]
+            #shape of feedback_encoder_outs=prev_output_tokens_b: (seq_len,bsz,hidden_size)
+            feedback_encoder_outs=feedback_encoder_outs.transpose(0, 1)
+            #now (bsz,seq_len,hidden_size)
+
+            #Create a blank tensor and fill it with index-selected positions
+            #New input has same size as prev_output_factors
+            second_input_decoder_b= feedback_encoder_outs.new_zeros([feedback_encoder_outs.size(0),prev_output_factors.size(1),feedback_encoder_outs.size(2)])
+            for batch_idx in range(len(prev_output_tokens_word_end_positions)):
+                for seq_pos_idx,original_pos in enumerate(prev_output_tokens_word_end_positions[i]):
+                    second_input_decoder_b[batch_idx,seq_pos_idx,:]=feedback_encoder_outs[batch_idx,original_pos,:]
         else:
             second_input_decoder_b=prev_output_tokens_first_subword
         encoder_out = self.encoder(src_tokens, src_lengths)
@@ -1711,9 +1721,6 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         encoder_out = encoder_out_dict['encoder_out']
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
 
-        if not self.embed_tokens_b:
-            prev_output_tokens_b, feedback_encoder_hiddens = prev_output_tokens_b['encoder_out'][:2]
-
         if self.debug:
             print("GRUDecoderTwoInputs forward")
             print("prev_output_tokens size: {} ".format(prev_output_tokens.size()))
@@ -1740,9 +1747,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         if self.embed_tokens_b:
             x_b=self.embed_tokens_b(prev_output_tokens_b)
         else:
+            x_b=prev_output_tokens_b
             #x_b represents a hidden state
-            #shape of feedback_encoder_outs=prev_output_tokens_b: (seq_len,bsz,hidden_size)
-            x_b=prev_output_tokens_b.transpose(0, 1)
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
         logit_tag_input=x_b
 
