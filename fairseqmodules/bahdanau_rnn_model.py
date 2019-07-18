@@ -1919,6 +1919,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             else:
                 x = self.fc_out(x)
 
+        if self.debug:
+            print("all_hiddens_last_layer: {}".format(all_hiddens_last_layer))
         #print("Forward pass.\nx({}):{}\nattn_scores:{}".format(x.size(),x,attn_scores))
         return x, attn_scores,all_hiddens_last_layer
 
