@@ -297,10 +297,10 @@ def main(args):
                 make_all(args.target_lang, tgt_factors_dict, factors=True, async_factors=True)
                 if args.async_tags_surface_feed_first:
                     #Create an additional version that contains only the first subword of each TL word
-                    make_all(args.target_lang, tgt_factors_dict, only_first_subword=True)
+                    make_all(args.target_lang, tgt_dict, only_first_subword=True)
                 if args.async_tags_surface_feed_last:
                     #Create an additional version that contains only the first subword of each TL word
-                    make_all(args.target_lang, tgt_factors_dict, only_last_subword=True)
+                    make_all(args.target_lang, tgt_dict, only_last_subword=True)
     print("| Wrote preprocessed data to {}".format(args.destdir))
 
     if args.alignfile:
