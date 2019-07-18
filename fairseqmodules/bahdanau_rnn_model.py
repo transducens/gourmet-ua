@@ -780,6 +780,9 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         # make sure that all args are properly defaulted (in case there are any new ones)
         base_architecture(args)
 
+        if 'feedback_state_and_last_subword' not in args:
+            args.feedback_state_and_last_subword=None
+
         if args.feedback_state_and_last_subword and not args.share_embeddings_two_decoders:
             raise ValueError('--feedback_state_and_last_subword must match --share_embeddings_two_decoders')
 
