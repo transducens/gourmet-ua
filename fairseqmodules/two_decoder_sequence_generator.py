@@ -1054,7 +1054,7 @@ class EnsembleModel(torch.nn.Module):
                         #TODO: this is very slow, as we are re-encoding the whole sequence at each timestep
                         #Run encoder with tokens_in_b and pass it
                         #tokens_in_b:  (bsz, seq_len)
-                        feedback_encoder_out=model.feedback_encoder(tokens_in_b,[tokens_in_b.size(1) for i in range(tokens_in_b.size(0))])
+                        feedback_encoder_out=model.feedback_encoder(tokens_in_b,torch.cuda.LongTensor( [tokens_in_b.size(1) for i in range(tokens_in_b.size(0))] ,device=tokens_in_b.device) )
                         feedback_encoder_outs, feedback_encoder_hiddens = feedback_encoder_out['encoder_out'][:2]
                         tokens_in_b_input=feedback_encoder_outs.transpose(0, 1)
                         #now (bsz,seq_len,hidden_size)
