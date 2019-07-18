@@ -928,7 +928,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         """Get targets from either the sample or the net's output."""
         return sample['target_factors_async']
 
-    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors, prev_output_tokens_lengths,prev_output_tokens_word_end_positions,prev_output_tokens_last_subword,prev_output_tokens_first_subword=None ):
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors, prev_output_tokens_lengths,prev_output_tokens_word_end_positions,prev_output_tokens_last_subword=None,prev_output_tokens_first_subword=None ):
         """
         Run the forward pass for an encoder-decoder model.
         First feed a batch of source tokens through the encoder. Then, feed the
