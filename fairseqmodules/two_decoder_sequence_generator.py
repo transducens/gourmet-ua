@@ -1065,12 +1065,19 @@ class EnsembleModel(torch.nn.Module):
                         # state of surface form decoder
 
                         #I assume incremental_state is well sorted
-                        self.incremental_states[model]
+
+                        import pdb; pdb.set_trace()
+                        #For the first time we run the tags decoder, we need the
+                        #inital state of the surface forms decoder, which is not available
+                        #directly. We will call the decoder and get the initial state
+                        if len(self.incremental_states[model]) == 0:
+                            sf_decoder_out=list(model.decoder(tokens_in_b,tokens_in_a,encoder_out,incremental_state=self.incremental_states[model]))
+                            self.increemental_states[model]={}
 
                         # Embedded last subword. Shape: (bsz)
                         embedded_last_subwords=model.decoder.embed_tokens(tokens_in_b[:,-1:])
-                        
-                        import pdb; pdb.set_trace()
+
+
 
 
 
