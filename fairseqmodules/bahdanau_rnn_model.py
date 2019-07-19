@@ -743,13 +743,22 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
 
 @register_model('bahdanau_rnn_two_decoders_mutual_influence_async')
 class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
-    def __init__(self, encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword):
+    def __init__(self, encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword,apply_transformation_input_b):
         BaseFairseqModel.__init__(self)
         self.encoder = encoder
         self.decoder = decoder
         self.decoder_b = decoder_b
         self.feedback_encoder= feedback_encoder
         self.feedback_state_and_last_subword=feedback_state_and_last_subword
+        self.apply_transformation_input_b=apply_transformation_input_b
+
+        if self.apply_transformation_input_b:
+            self.linear_transf_input_b=Linear(self.decoder.hidden_size, self.decoder.hidden_size, bias=True)
+            self.activ_transf_input_b=nn.Tanh()
+        else:
+            self.linear_transf_input_b=None
+            self.activ_transf_input_b=None
+
         assert isinstance(self.encoder, FairseqEncoder)
         assert isinstance(self.decoder, GRUDecoderTwoInputs)
         assert isinstance(self.decoder_b, GRUDecoderTwoInputs)
@@ -924,7 +933,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
-        r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword=args.feedback_state_and_last_subword)
+        r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword=args.feedback_state_and_last_subword,apply_transformation_input_b=args.transform_last_state)
         return r
 
     def get_target_factors(self, sample, net_output):
@@ -977,6 +986,10 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             all_hiddens_last_layer=torch.stack(decoder_out[2])
             #( bsz,seq_len+1,hidden_size )
             all_hiddens_last_layer=all_hiddens_last_layer.transpose(0,1)
+
+            if self.apply_transformation_input_b:
+                all_hiddens_last_layer=self.linear_transf_input_b(all_hiddens_last_layer)
+                all_hiddens_last_layer=self.activ_transf_input_b(all_hiddens_last_layer)
 
             second_input_decoder_b_a= decoder_out[0].new_zeros([all_hiddens_last_layer.size(0),prev_output_factors.size(1),all_hiddens_last_layer.size(2)])
             for batch_idx in range(len(prev_output_tokens_word_end_positions)):
