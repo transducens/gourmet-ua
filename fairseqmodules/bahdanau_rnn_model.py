@@ -778,7 +778,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                             help='When using concatenation of decoder hidden state and last subword for feedback to tags decoder, apply MLP to transfom state.')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
-
+        parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
+                            help='Both decoders share ONLY factors embeddings')
 
     @classmethod
     def build_model(cls, args, task):
@@ -842,9 +843,11 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                     task.target_dictionary,
                     args.decoder_embed_dim
                 )
-            if args.share_embeddings_two_decoders:
+            if args.share_embeddings_two_decoders or args.share_factors_embeddings_two_decoders:
                 if pretrained_decoder_embed is None:
-                    pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                    #Otherwise, pretrained_decoder_embed will be None and will be independently learnt by each decoder
+                    if args.share_embeddings_two_decoders:
+                        pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
                 pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
@@ -897,6 +900,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed,
+            pretrained_embed_b=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
             b_condition_end=args.tags_condition_end,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
@@ -924,7 +928,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             dropout_out=args.decoder_dropout_out,
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder.output_units,
-            pretrained_embed=pretrained_decoder_embed,
+            pretrained_embed=pretrained_decoder_embed_b,
+            pretrained_embed_b=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
             adaptive_softmax_cutoff=(
