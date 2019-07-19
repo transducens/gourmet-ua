@@ -1070,15 +1070,15 @@ class EnsembleModel(torch.nn.Module):
                         #directly. We will call the decoder and get the initial state
                         if len(self.incremental_states[model]) == 0:
                             sf_decoder_out=list(model.decoder(tokens_in_b,tokens_in_a,encoder_out,incremental_state=self.incremental_states[model]))
-                            self.increemental_states[model]={}
+                            self.incremental_states[model]={}
                             #shape: (bsz,hidden_size)
-                            prev_decoder_states=sf_decoder_out[2][0]
+                            prev_decoder_states=sf_decoder_out[2][0].unsqueeze(1)
                         else:
                             #shape: (bsz,hidden_size)
-                            prev_decoder_states=self.incremental_states[model][ utils._get_full_incremental_state_key(model.decoder, 'cached_state')][0]
+                            prev_decoder_states=self.incremental_states[model][ utils._get_full_incremental_state_key(model.decoder, 'cached_state')][0].unsqueeze(1)
 
                         # Embedded last subword. Shape: (bsz, embed_dim)
-                        embedded_last_subwords=model.decoder.embed_tokens(tokens_in_b[:,-1])
+                        embedded_last_subwords=model.decoder.embed_tokens(tokens_in_b[:,-1:])
 
                         tokens_in_b_input=torch.cat((prev_decoder_states,embedded_last_subwords),-1)
 
