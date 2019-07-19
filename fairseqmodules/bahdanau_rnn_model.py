@@ -778,7 +778,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                             help='When using concatenation of decoder hidden state and last subword for feedback to tags decoder, apply MLP to transfom state.')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
-        parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
+            parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share ONLY factors embeddings')
 
     @classmethod
@@ -929,7 +929,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             attention=options.eval_bool(args.decoder_attention),
             encoder_output_units=encoder.output_units,
             pretrained_embed=pretrained_decoder_embed_b,
-            pretrained_embed_b=pretrained_decoder_embed,
+            pretrained_embed_b=pretrained_decoder_embed if (not args.feedback_encoder and not args.feedback_state_and_last_subword ) else None,
             share_input_output_embed=args.share_decoder_input_output_embed,
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
             adaptive_softmax_cutoff=(
