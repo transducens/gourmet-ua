@@ -986,6 +986,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             second_input_decoder_b_b=self.decoder.embed_tokens(prev_output_tokens_last_subword)
 
             second_input_decoder_b=torch.cat((second_input_decoder_b_a,second_input_decoder_b_b),-1)
+        else:
+            second_input_decoder_b=prev_output_tokens_first_subword
         decoder_b_out = self.decoder_b(prev_output_factors,second_input_decoder_b, encoder_out)
         return decoder_out, decoder_b_out
 
