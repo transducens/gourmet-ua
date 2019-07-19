@@ -778,7 +778,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                             help='When using concatenation of decoder hidden state and last subword for feedback to tags decoder, apply MLP to transfom state.')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
-            parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
+        parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share ONLY factors embeddings')
 
     @classmethod
