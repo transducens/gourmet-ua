@@ -1058,6 +1058,23 @@ class EnsembleModel(torch.nn.Module):
                         feedback_encoder_outs, feedback_encoder_hiddens = feedback_encoder_out['encoder_out'][:2]
                         tokens_in_b_input=feedback_encoder_outs.transpose(0, 1)
                         #now (bsz,seq_len,hidden_size)
+                    elif self.tag_feedback_state_and_last_subword:
+                        #Apply embeddings to last subword
+                        #Concatenate to last state
+
+                        # state of surface form decoder
+
+                        #I assume incremental_state is well sorted
+                        self.incremental_states[model]
+
+                        # Embedded last subword. Shape: (bsz)
+                        embedded_last_subwords=model.decoder.embed_tokens(tokens_in_b[:,-1:])
+                        
+                        import pdb; pdb.set_trace()
+
+
+
+
 
                     if TwoDecoderSequenceGenerator.DEBUG:
                         print("After adjusting inputs for async: words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b_input ] ))
