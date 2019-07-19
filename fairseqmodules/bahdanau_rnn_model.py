@@ -948,7 +948,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         Returns:
             the decoder's output, typically of shape `(batch, tgt_len, vocab)`
         """
-        #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
+        #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\nprev_output_tokens_last_subword:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors,prev_output_tokens_last_subword))
+
 
         encoder_out = self.encoder(src_tokens, src_lengths)
         decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
