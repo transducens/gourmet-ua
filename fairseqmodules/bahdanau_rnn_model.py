@@ -743,13 +743,13 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
 
 @register_model('bahdanau_rnn_two_decoders_mutual_influence_async')
 class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
-    def __init__(self, encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword,apply_transformation_input_b):
+    def __init__(self, encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword_embs,apply_transformation_input_b):
         BaseFairseqModel.__init__(self)
         self.encoder = encoder
         self.decoder = decoder
         self.decoder_b = decoder_b
         self.feedback_encoder= feedback_encoder
-        self.feedback_state_and_last_subword=feedback_state_and_last_subword
+        self.feedback_state_and_last_subword_embs=feedback_state_and_last_subword_embs
         self.apply_transformation_input_b=apply_transformation_input_b
 
         if self.apply_transformation_input_b:
@@ -793,8 +793,9 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         if 'feedback_state_and_last_subword' not in args:
             args.feedback_state_and_last_subword=None
 
-        if args.feedback_state_and_last_subword and not args.share_embeddings_two_decoders:
-            raise ValueError('--feedback_state_and_last_subword must match --share_embeddings_two_decoders')
+        #Now we manage embedding creation
+        #if args.feedback_state_and_last_subword and not args.share_embeddings_two_decoders:
+        #    raise ValueError('--feedback_state_and_last_subword must match --share_embeddings_two_decoders')
 
         if args.encoder_layers != args.decoder_layers:
             raise ValueError('--encoder-layers must match --decoder-layers')
@@ -938,7 +939,11 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
-        r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword=args.feedback_state_and_last_subword,apply_transformation_input_b=args.transform_last_state)
+        feedback_state_and_last_subword_embs=pretrained_decoder_embed
+        if args.feedback_state_and_last_subword and feedback_state_and_last_subword_embs == None:
+            #If we are not sharing surface form embeddings between the two decoders, create them
+            feedback_state_and_last_subword_embs=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+        r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword_embs=feedback_state_and_last_subword_embs,apply_transformation_input_b=args.transform_last_state)
         return r
 
     def get_target_factors(self, sample, net_output):
@@ -986,7 +991,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                 #second_input_decoder_b[batch_idx].index_copy_(0,prev_output_tokens_word_end_positions[batch_idx],feedback_encoder_outs[batch_idx])
                 for seq_pos_idx,original_pos in enumerate(prev_output_tokens_word_end_positions[batch_idx]):
                     second_input_decoder_b[batch_idx,seq_pos_idx,:]=feedback_encoder_outs[batch_idx,original_pos,:]
-        elif self.feedback_state_and_last_subword:
+        elif self.feedback_state_and_last_subword_embs is not None:
             #( seq_len,bsz,hidden_size )
             all_hiddens_last_layer=torch.stack(decoder_out[2])
             #( bsz,seq_len+1,hidden_size )
@@ -1001,7 +1006,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                 for seq_pos_idx,original_pos in enumerate(prev_output_tokens_word_end_positions[batch_idx]):
                     second_input_decoder_b_a[batch_idx,seq_pos_idx,:]=all_hiddens_last_layer[batch_idx,original_pos,:]
 
-            second_input_decoder_b_b=self.decoder.embed_tokens(prev_output_tokens_last_subword)
+            second_input_decoder_b_b=self.feedback_state_and_last_subword_embs.embed_tokens(prev_output_tokens_last_subword)
 
             second_input_decoder_b=torch.cat((second_input_decoder_b_a,second_input_decoder_b_b),-1)
         else:
