@@ -144,7 +144,7 @@ if backend == Backend.MARIAN:
 if backend == Backend.FAIRSEQ:
 		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs)
 		if trainArgs2 != None:
-				trainCmd2 ="bash {tools}/scripts/select-checkpoint-best-tag-perplexity.sh {modelDir}/checkpoints ;CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs2)"
+				trainCmd2 ="bash {tools}/scripts/select-checkpoint-best-tag-perplexity.sh {modelDir}/checkpoints ;CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs2)
 
 
 if backend == Backend.MARIAN:
