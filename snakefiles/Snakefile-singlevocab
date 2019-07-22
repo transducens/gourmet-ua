@@ -128,18 +128,24 @@ if "marianArgs" in config:
 if "trainArgs" in config:
 		trainArgs=config["trainArgs"]
 
+trainArgs2=None
+if "trainArgs2" in config:
+	trainArgs2=config["trainArgs2"]
+trainCmd2=""
 
 gpuIdCuda=config["gpuId"].replace(" ",",") if isinstance(config["gpuId"], str) else str(config["gpuId"]).replace(" ",",")
 translateArgs=""
 if "translateArgs" in config:
 	translateArgs=config["translateArgs"]
 
-
 #NMT commands
 if backend == Backend.MARIAN:
 		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(trainArgs) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
 if backend == Backend.FAIRSEQ:
 		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs)
+		if trainArgs2 != None:
+				trainCmd2 ="bash {tools}/scripts/select-checkpoint-best-tag-perplexity.sh {modelDir}/checkpoints ;CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs2)"
+
 
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
@@ -256,7 +262,7 @@ rule train_nmt_fairseq:
 		output:
 				"{dir}/checkpoints/checkpoint_best.pt".format(dir=modelDir)
 		shell:
-				"{trainCmd} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train.log"
+				"{trainCmd} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train.log; if [ \"{trainCmd2}\" != \"\" ]; then  {trainCmd2} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train2.log ; fi"
 
 rule choose_best_checkpoint:
 		input:

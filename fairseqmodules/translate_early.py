@@ -14,11 +14,25 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
         self.last_logging_output=None
         self.patience=args.early_stop_patience
 
+        self.loss_field='loss'
+        self.loss_sample_size_field=None
+
+        assert not args.early_stop_loss_a and args.early_stop_loss_b
+
+        if args.early_stop_loss_a:
+            self.loss_field='loss_a'
+            self.loss_sample_size_field='sample_size_a'
+        elif args.early_stop_loss_b:
+            self.loss_field='loss_b'
+            self.loss_sample_size_field='sample_size_b'
+
 
     @staticmethod
     def add_args(parser):
         fairseq.tasks.translation.TranslationTask.add_args(parser)
         parser.add_argument('--early-stop-patience',  default=10, type=int,help='Early stop patience.')
+        parser.add_argument('--early-stop-loss-a',  default=False, action='store_true',help='Early stop on loss of output a')
+        parser.add_argument('--early-stop-loss-b',  default=False, action='store_true',help='Early stop on loss of output b')
 
     def valid_step(self, sample, model, criterion):
         self.after_valid_flag=True

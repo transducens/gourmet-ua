@@ -148,6 +148,13 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
+        parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
+                            help='Both decoders share ONLY factors embeddings')
+        parser.add_argument('--freeze-encoder-weights', default=False, action='store_true',
+                            help='Freeze encoder weights')
+        parser.add_argument('--decoder-freeze-factor-embed', default=False, action='store_true',
+                            help='Freeze factor embeddings')
+
 
 
     @classmethod
@@ -206,10 +213,13 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                     task.target_dictionary,
                     args.decoder_embed_dim
                 )
-            if args.share_embeddings_two_decoders:
-                if pretrained_decoder_embed is None:
-                    pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
-                pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
+
+                if args.share_embeddings_two_decoders or args.share_factors_embeddings_two_decoders:
+                    if pretrained_decoder_embed is None:
+                        #Otherwise, pretrained_decoder_embed will be None and will be independently learnt by each decoder
+                        if args.share_embeddings_two_decoders:
+                            pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                    pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
 
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
@@ -235,6 +245,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             pretrained_embed=pretrained_encoder_embed,
             debug=args.debug if 'debug' in args else False
         )
+        if args.freeze_encoder_weights:
+            encoder.freeze_weights()
 
         decoder = GRUDecoderTwoInputs(
             dictionary=task.target_dictionary,
@@ -303,6 +315,15 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 debug=args.debug if 'debug' in args else False
         )
 
+        if args.decoder_freeze_embed:
+            decoder.embed_tokens.weight.requires_grad=False
+            if args.surface_condition_tags:
+                decoder_b.embed_tokens_b.weight.requires_grad=False
+
+        if args.decoder_freeze_factor_embed:
+            decoder.embed_tokens_b.weight.requires_grad=False
+            decoder_b.embed_tokens.weight.requires_grad=False
+
         r= cls(encoder, decoder, decoder_b)
         return r
 
@@ -359,7 +380,6 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
-
 
     @classmethod
     def build_model(cls, args, task):
@@ -421,6 +441,7 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
                 if pretrained_decoder_embed is None:
                     pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
                 pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
+
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
                 args.decoder_embed_dim != args.decoder_out_embed_dim):
@@ -780,6 +801,10 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                             help='Both decoders share embeddings')
         parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share ONLY factors embeddings')
+        parser.add_argument('--freeze-encoder-weights', default=False, action='store_true',
+                            help='Freeze encoder weights')
+        parser.add_argument('--decoder-freeze-factor-embed', default=False, action='store_true',
+                            help='Freeze factor embeddings')
 
     @classmethod
     def build_model(cls, args, task):
@@ -874,6 +899,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             pretrained_embed=pretrained_encoder_embed,
             debug=args.debug if 'debug' in args else False
         )
+        if args.freeze_encoder_weights:
+            encoder.freeze_weights()
 
         feedback_encoder=None
         if args.feedback_encoder:
@@ -888,6 +915,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                 pretrained_embed=pretrained_decoder_embed,
                 debug=args.debug if 'debug' in args else False
             )
+            if args.freeze_encoder_weights:
+                feedback_encoder.freeze_weights()
 
         decoder = GRUDecoderTwoInputs(
             dictionary=task.target_dictionary,
@@ -943,6 +972,16 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         if args.feedback_state_and_last_subword and feedback_state_and_last_subword_embs == None:
             #If we are not sharing surface form embeddings between the two decoders, create them
             feedback_state_and_last_subword_embs=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+
+        #Properly freeze embeddings according to args
+        if args.decoder_freeze_embed:
+            decoder.embed_tokens.weight.requires_grad = False
+            if decoder_b.embed_tokens_b is not None:
+                decoder_b.embed_tokens_b.weight.requires_grad=False
+        if args.decoder_freeze_factor_embed:
+            decoder.embed_tokens_b.weight.requires_grad = False
+            decoder_b.embed_tokens.weight.requires_grad = False
+
         r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword_embs=feedback_state_and_last_subword_embs,apply_transformation_input_b=args.transform_last_state)
         return r
 
@@ -1250,6 +1289,16 @@ class GRUEncoder(FairseqEncoder):
         self.output_units = hidden_size
         if bidirectional:
             self.output_units *= 2
+
+    def freeze_weights(self):
+        #Freeze embeddings
+        self.embed_tokens.weight.requires_grad=False
+
+        #Freeze GRU
+        for w in [self.rnn.weight_ih_l, self.rnn.weight_hh_l,self.rnn.bias_ih_l , self.rnn.bias_hh_l ]:
+            for i in range(len(w)):
+                w[i].requires_grad=False
+
 
     def forward(self, src_tokens, src_lengths):
         if self.debug:
