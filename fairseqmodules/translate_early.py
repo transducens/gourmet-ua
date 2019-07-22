@@ -17,7 +17,7 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
         self.loss_field='loss'
         self.loss_sample_size_field=None
 
-        assert not args.early_stop_loss_a and args.early_stop_loss_b
+        assert not (args.early_stop_loss_a and args.early_stop_loss_b)
 
         if args.early_stop_loss_a:
             self.loss_field='loss_a'
@@ -64,6 +64,7 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
     def grad_denom(self, sample_sizes, criterion):
         sample_size= super().grad_denom(sample_sizes, criterion)
         if self.after_valid_flag:
+            #import pdb; pdb.set_trace()
             sample_size_for_early_stop=sample_size
             if self.loss_sample_size_field:
                 sample_size_for_early_stop=self.last_logging_output.get(self.loss_sample_size_field, 0)
