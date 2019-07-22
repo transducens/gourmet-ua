@@ -1078,8 +1078,8 @@ class EnsembleModel(torch.nn.Module):
                             prev_decoder_states=self.incremental_states[model][ utils._get_full_incremental_state_key(model.decoder, 'cached_state')][0].unsqueeze(1)
 
                         if model.apply_transformation_input_b:
-                            prev_decoder_states=self.linear_transf_input_b(prev_decoder_states)
-                            prev_decoder_states=self.activ_transf_input_b(prev_decoder_states)
+                            prev_decoder_states=model.linear_transf_input_b(prev_decoder_states)
+                            prev_decoder_states=model.activ_transf_input_b(prev_decoder_states)
 
                         # Embedded last subword. Shape: (bsz, embed_dim)
                         embedded_last_subwords=model.decoder.embed_tokens(tokens_in_b[:,-1:])
