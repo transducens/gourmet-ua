@@ -828,7 +828,7 @@ class EnsembleModel(torch.nn.Module):
             if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel):
                 if models[0].feedback_encoder:
                     self.tag_feedback_encoder=True
-                elif models[0].feedback_state_and_last_subword:
+                elif models[0].feedback_state_and_last_subword_embs is not None:
                     self.tag_feedback_state_and_last_subword=True
                 else:
                     self.tag_feedback_first_subword=True
@@ -1082,7 +1082,7 @@ class EnsembleModel(torch.nn.Module):
                             prev_decoder_states=model.activ_transf_input_b(prev_decoder_states)
 
                         # Embedded last subword. Shape: (bsz, embed_dim)
-                        embedded_last_subwords=model.feedback_state_and_last_subword(tokens_in_b[:,-1:])
+                        embedded_last_subwords=model.feedback_state_and_last_subword_embs(tokens_in_b[:,-1:])
 
                         tokens_in_b_input=torch.cat((prev_decoder_states,embedded_last_subwords),-1)
 
