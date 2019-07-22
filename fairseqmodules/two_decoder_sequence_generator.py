@@ -1082,7 +1082,7 @@ class EnsembleModel(torch.nn.Module):
                             prev_decoder_states=model.activ_transf_input_b(prev_decoder_states)
 
                         # Embedded last subword. Shape: (bsz, embed_dim)
-                        embedded_last_subwords=model.decoder.embed_tokens(tokens_in_b[:,-1:])
+                        embedded_last_subwords=model.feedback_state_and_last_subword(tokens_in_b[:,-1:])
 
                         tokens_in_b_input=torch.cat((prev_decoder_states,embedded_last_subwords),-1)
 

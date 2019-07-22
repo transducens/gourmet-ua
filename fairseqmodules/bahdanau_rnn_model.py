@@ -1006,7 +1006,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                 for seq_pos_idx,original_pos in enumerate(prev_output_tokens_word_end_positions[batch_idx]):
                     second_input_decoder_b_a[batch_idx,seq_pos_idx,:]=all_hiddens_last_layer[batch_idx,original_pos,:]
 
-            second_input_decoder_b_b=self.feedback_state_and_last_subword_embs.embed_tokens(prev_output_tokens_last_subword)
+            second_input_decoder_b_b=self.feedback_state_and_last_subword_embs(prev_output_tokens_last_subword)
 
             second_input_decoder_b=torch.cat((second_input_decoder_b_a,second_input_decoder_b_b),-1)
         else:
