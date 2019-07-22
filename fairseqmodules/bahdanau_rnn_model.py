@@ -1295,7 +1295,7 @@ class GRUEncoder(FairseqEncoder):
         self.embed_tokens.weight.requires_grad=False
 
         #Freeze GRU
-        for att in 'weight_ih_l', 'weight_hh_l','bias_ih_l' , 'rnn.bias_hh_l' ]:
+        for att in 'weight_ih_l', 'weight_hh_l','bias_ih_l' , 'bias_hh_l' ]:
             for i in range(self.rnn.num_layers):
                 getattr(self.rnn,att+str(i)).requires_grad=False
 
