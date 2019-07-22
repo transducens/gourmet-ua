@@ -82,4 +82,6 @@ class CrossEntropyTwoDecodersCriterion(CrossEntropyCriterion):
             'ntokens': ntokens,
             'nsentences': nsentences,
             'sample_size': sample_size,
+            'sample_size_a': sample_size_a,
+            'sample_size_b': sample_size_b
         }
