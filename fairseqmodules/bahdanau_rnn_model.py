@@ -89,7 +89,7 @@ class BahdanauRNNModel(LSTMModel):
 
         if args.encoder_freeze_embed:
             pretrained_encoder_embed.weight.requires_grad = False
-        if args.decoder_freeze_embed:
+        if args.decoder_freeze_embed and pretrained_decoder_embed != None:
             pretrained_decoder_embed.weight.requires_grad = False
 
         encoder = GRUEncoder(
@@ -231,7 +231,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
 
         if args.encoder_freeze_embed:
             pretrained_encoder_embed.weight.requires_grad = False
-        if args.decoder_freeze_embed:
+        if args.decoder_freeze_embed and pretrained_decoder_embed != None:
             pretrained_decoder_embed.weight.requires_grad = False
 
         encoder = GRUEncoder(
@@ -452,7 +452,7 @@ class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
 
         if args.encoder_freeze_embed:
             pretrained_encoder_embed.weight.requires_grad = False
-        if args.decoder_freeze_embed:
+        if args.decoder_freeze_embed and pretrained_decoder_embed != None:
             pretrained_decoder_embed.weight.requires_grad = False
 
         encoder = GRUEncoder(
@@ -675,7 +675,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
 
         if args.encoder_freeze_embed:
             pretrained_encoder_embed.weight.requires_grad = False
-        if args.decoder_freeze_embed:
+        if args.decoder_freeze_embed and pretrained_decoder_embed != None:
             pretrained_decoder_embed.weight.requires_grad = False
 
         encoder = GRUEncoder(
@@ -885,7 +885,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
 
         if args.encoder_freeze_embed:
             pretrained_encoder_embed.weight.requires_grad = False
-        if args.decoder_freeze_embed:
+        if args.decoder_freeze_embed and pretrained_decoder_embed != None:
             pretrained_decoder_embed.weight.requires_grad = False
 
         encoder = GRUEncoder(
@@ -1147,7 +1147,7 @@ class BahdanauRNNTwoEncDecodersAsyncModel(BahdanauRNNModel):
 
         if args.encoder_freeze_embed:
             pretrained_encoder_embed.weight.requires_grad = False
-        if args.decoder_freeze_embed:
+        if args.decoder_freeze_embed and pretrained_decoder_embed != None:
             pretrained_decoder_embed.weight.requires_grad = False
 
         encoder = GRUEncoder(
@@ -1295,7 +1295,7 @@ class GRUEncoder(FairseqEncoder):
         self.embed_tokens.weight.requires_grad=False
 
         #Freeze GRU
-        for att in 'weight_ih_l', 'weight_hh_l','bias_ih_l' , 'bias_hh_l' ]:
+        for att in [ 'weight_ih_l', 'weight_hh_l','bias_ih_l' , 'bias_hh_l' ]:
             for i in range(self.rnn.num_layers):
                 getattr(self.rnn,att+str(i)).requires_grad=False
 
