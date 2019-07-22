@@ -1295,9 +1295,9 @@ class GRUEncoder(FairseqEncoder):
         self.embed_tokens.weight.requires_grad=False
 
         #Freeze GRU
-        for w in [self.rnn.weight_ih_l, self.rnn.weight_hh_l,self.rnn.bias_ih_l , self.rnn.bias_hh_l ]:
-            for i in range(len(w)):
-                w[i].requires_grad=False
+        for att in 'weight_ih_l', 'weight_hh_l','bias_ih_l' , 'rnn.bias_hh_l' ]:
+            for i in range(self.rnn.num_layers):
+                getattr(self.rnn,att+str(i)).requires_grad=False
 
 
     def forward(self, src_tokens, src_lengths):
