@@ -64,6 +64,9 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
     def grad_denom(self, sample_sizes, criterion):
         sample_size= super().grad_denom(sample_sizes, criterion)
         if self.after_valid_flag:
-            self.valid_loss_meter.update(self.last_logging_output.get('loss', 0), sample_size)
+            sample_size_for_early_stop=sample_size
+            if self.loss_sample_size_field:
+                sample_size_for_early_stop=self.last_logging_output.get(self.loss_sample_size_field, 0)
+            self.valid_loss_meter.update(self.last_logging_output.get(self.loss_field, 0), sample_size_for_early_stop)
         self.after_valid_flag=False
         return sample_size
