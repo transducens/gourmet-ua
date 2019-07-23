@@ -968,10 +968,12 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
-        feedback_state_and_last_subword_embs=pretrained_decoder_embed
-        if args.feedback_state_and_last_subword and feedback_state_and_last_subword_embs == None:
-            #If we are not sharing surface form embeddings between the two decoders, create them
-            feedback_state_and_last_subword_embs=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+        feedback_state_and_last_subword_embs=None
+        if args.feedback_state_and_last_subword:
+            feedback_state_and_last_subword_embs=pretrained_decoder_embed
+            if feedback_state_and_last_subword_embs == None:
+                #If we are not sharing surface form embeddings between the two decoders, create them
+                feedback_state_and_last_subword_embs=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
 
         #Properly freeze embeddings according to args
         if args.decoder_freeze_embed:
