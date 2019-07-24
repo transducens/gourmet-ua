@@ -1478,7 +1478,9 @@ class ConditionalGru(nn.Module):
 
     def freeze_weights(self):
         self.attention.freeze_weights()
-        #TODO: freeze weights of grus
+        for gru in [self.gru1, self.gru2]:
+            for att in [ 'weight_ih', 'weight_hh','bias_ih' , 'bias_hh' ]:
+                getattr(gru,att).requires_grad=False
 
     def initialize_minibatch(self,encoder_outs):
         bsz=encoder_outs.size(1)
