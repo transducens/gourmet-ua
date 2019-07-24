@@ -805,6 +805,10 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                             help='Freeze encoder weights')
         parser.add_argument('--decoder-freeze-factor-embed', default=False, action='store_true',
                             help='Freeze factor embeddings')
+        parser.add_argument('--decoder-a-freeze', default=False, action='store_true',
+                            help='Compleely freeze surface form decoder')
+        parser.add_argument('--decoder-b-freeze', default=False, action='store_true',
+                            help='Compleely freeze factor decoder')
 
     @classmethod
     def build_model(cls, args, task):
@@ -940,6 +944,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
+        if args.decoder_a_freeze:
+            decoder.freeze_weights()
 
         size_input_b=None
         if args.feedback_encoder:
@@ -968,12 +974,16 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
+        if args.decoder_b_freeze:
+            decoder_b.freeze_weights()
         feedback_state_and_last_subword_embs=None
         if args.feedback_state_and_last_subword:
             feedback_state_and_last_subword_embs=pretrained_decoder_embed
             if feedback_state_and_last_subword_embs == None:
                 #If we are not sharing surface form embeddings between the two decoders, create them
                 feedback_state_and_last_subword_embs=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+            if args.decoder_b_freeze:
+                feedback_state_and_last_subword_embs.weight.requires_grad=False
 
         #Properly freeze embeddings according to args
         if args.decoder_freeze_embed:
