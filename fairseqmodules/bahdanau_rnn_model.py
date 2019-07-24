@@ -1420,6 +1420,10 @@ class ConcatAttentionLayer(nn.Module):
         mask = Bernoulli(torch.full_like(source_hids[0], 1 - self.dropout_p)).sample()/(1 - self.dropout_p)
         return source_hids*mask # In theory, with broadcasting we multiply all timesteps by the same mask
 
+    def freeze_weights(self):
+        self.input_proj.freeze_weights()
+        self.score_proj.freeze_weights()
+
     def forward(self, input, masked_source_hids, encoder_padding_mask):
         # input: bsz x input_embed_dim
         # source_hids: srclen x bsz x source_embed_dim
@@ -1471,6 +1475,10 @@ class ConditionalGru(nn.Module):
         #TODO: configure dropout
         self.attention=ConcatAttentionLayer(input_embed_dim=self.hidden_dim, source_embed_dim=source_context_dim,alignment_dim=self.hidden_dim, bias=True, dropout=0.0)#bias = True like Bahdanau
         self.gru2=nn.GRUCell(input_size=self.source_context_dim, hidden_size=self.hidden_dim)
+
+    def freeze_weights(self):
+        self.attention.freeze_weights()
+        #TODO: freeze weights of grus
 
     def initialize_minibatch(self,encoder_outs):
         bsz=encoder_outs.size(1)
@@ -1831,6 +1839,48 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         elif not self.share_input_output_embed:
             self.fc_out = Linear(out_embed_dim, num_embeddings, dropout=dropout_out)
 
+    def freeze_weights(self):
+        #Freeze embeddings
+        if self.embed_tokens:
+            self.embed_tokens.weight.requires_grad=False
+        if self.embed_tokens_b:
+            self.embed_tokens_b.weight.requires_grad=False
+
+        #Freeze linear initial state
+        self.linear_initial_state.freeze_weights()
+
+        if not self.cond_gru:
+            #Freeze GRUCell and ConcatAttentionLayer
+            for l in self.layers:
+                for att in [ 'weight_ih', 'weight_hh','bias_ih' , 'bias_hh' ]:
+                    getattr(l,att).requires_grad=False
+
+            if self.attention:
+                self.attention.freeze_weights()
+
+        else:
+            #Freeze ConditionalGrus
+            for l in self.layers:
+                l.freeze_weights()
+
+        self.logit_lstm.freeze_weights()
+        self.logit_prev.freeze_weights()
+        if self.b_condition_end:
+            self.logit_tag.freeze_weights()
+        self.logit_ctx.freeze_weights()
+
+        assert self.adaptive_softmax == None
+
+        if not self.share_input_output_embed:
+            self.fc_out.freeze_weights()
+
+        #Freeze GRU
+        for att in [ 'weight_ih_l', 'weight_hh_l','bias_ih_l' , 'bias_hh_l' ]:
+            for i in range(self.rnn.num_layers):
+                getattr(self.rnn,att+str(i)).requires_grad=False
+                if self.rnn.bidirectional:
+                    getattr(self.rnn,att+str(i)+"_reverse").requires_grad=False
+
     def forward(self, prev_output_tokens,prev_output_tokens_b, encoder_out_dict, incremental_state=None):
         encoder_out = encoder_out_dict['encoder_out']
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
@@ -2034,6 +2084,11 @@ class Linear(nn.Module):
             self.layer.bias.data.uniform_(-0.1, 0.1)
         self.dropout=nn.Dropout(dropout)
         self.dropout_short=nn.Dropout(dropout)
+    def freeze_weights(self):
+        self.layer.weight.requires_grad=False
+        if self.layer.bias:
+            self.layer.bias.requires_grad=False
+
     def forward(self,x):
         x=self.layer(x)
         if len(x.size()) < 3:
