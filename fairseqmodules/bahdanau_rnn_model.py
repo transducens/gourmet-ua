@@ -944,7 +944,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
-        if args.decoder_a_freeze:
+        if 'decoder_a_freeze' in args and args.decoder_a_freeze:
             decoder.freeze_weights()
 
         size_input_b=None
@@ -974,7 +974,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             ),
             debug=args.debug if 'debug' in args else False
         )
-        if args.decoder_b_freeze:
+        if 'decoder_b_freeze' in args and  args.decoder_b_freeze:
             decoder_b.freeze_weights()
         feedback_state_and_last_subword_embs=None
         if args.feedback_state_and_last_subword:
@@ -982,7 +982,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             if feedback_state_and_last_subword_embs == None:
                 #If we are not sharing surface form embeddings between the two decoders, create them
                 feedback_state_and_last_subword_embs=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
-            if args.decoder_b_freeze:
+            if 'decoder_b_freeze' in args and args.decoder_b_freeze:
                 feedback_state_and_last_subword_embs.weight.requires_grad=False
 
         #Properly freeze embeddings according to args
@@ -1886,12 +1886,6 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         if not self.share_input_output_embed:
             self.fc_out.freeze_weights()
 
-        #Freeze GRU
-        for att in [ 'weight_ih_l', 'weight_hh_l','bias_ih_l' , 'bias_hh_l' ]:
-            for i in range(self.rnn.num_layers):
-                getattr(self.rnn,att+str(i)).requires_grad=False
-                if self.rnn.bidirectional:
-                    getattr(self.rnn,att+str(i)+"_reverse").requires_grad=False
 
     def forward(self, prev_output_tokens,prev_output_tokens_b, encoder_out_dict, incremental_state=None):
         encoder_out = encoder_out_dict['encoder_out']
@@ -2098,7 +2092,7 @@ class Linear(nn.Module):
         self.dropout_short=nn.Dropout(dropout)
     def freeze_weights(self):
         self.layer.weight.requires_grad=False
-        if self.layer.bias:
+        if self.layer.bias is not None:
             self.layer.bias.requires_grad=False
 
     def forward(self,x):
