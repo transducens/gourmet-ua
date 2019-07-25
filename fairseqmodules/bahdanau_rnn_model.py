@@ -764,7 +764,7 @@ class BahdanauRNNTwoDecodersAsyncModel(BahdanauRNNModel):
 
 @register_model('bahdanau_rnn_two_decoders_mutual_influence_async')
 class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
-    def __init__(self, encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword_embs,apply_transformation_input_b):
+    def __init__(self, encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword_embs,apply_transformation_input_b,reset_b_decoder=False):
         BaseFairseqModel.__init__(self)
         self.encoder = encoder
         self.decoder = decoder
@@ -779,6 +779,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         else:
             self.linear_transf_input_b=None
             self.activ_transf_input_b=None
+
+        self.reset_b_decoder=False
 
         assert isinstance(self.encoder, FairseqEncoder)
         assert isinstance(self.decoder, GRUDecoderTwoInputs)
@@ -809,6 +811,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
                             help='Compleely freeze surface form decoder')
         parser.add_argument('--decoder-b-freeze', default=False, action='store_true',
                             help='Compleely freeze factor decoder')
+        parser.add_argument('--reset-b-decoder', default=False, action='store_true',
+                            help='Reset factors decoder when loading a model')
 
     @classmethod
     def build_model(cls, args, task):
@@ -994,8 +998,28 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             decoder.embed_tokens_b.weight.requires_grad = False
             decoder_b.embed_tokens.weight.requires_grad = False
 
-        r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword_embs=feedback_state_and_last_subword_embs,apply_transformation_input_b=args.transform_last_state)
+        r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword_embs=feedback_state_and_last_subword_embs,apply_transformation_input_b=args.transform_last_state, reset_b_decoder=args.reset_b_decoder if 'reset_b_decoder' in args else False)
         return r
+
+    def load_state_dict(state_dict, strict=True):
+        if self.reset_b_decoder:
+            #TODO: additional encoder is not reset
+            reset_keys=[k for k in state_dict.keys() if k.startswith("decoder_b.") or k.startswith("feedback_state_and_last_subword_embs.") or k.startswith("linear_transf_input_b.")]
+
+            #If surface form embeddings are shared, we do not reset them
+            if self.decoder.embed_tokens == self.decoder_b.embed_tokens_b or self.decoder.embed_tokens == self.feedback_state_and_last_subword_embs:
+                reset_keys= [k for k in reset_keys if not k.startswith("decoder_b.embed_tokens_b") and not k.startswith("feedback_state_and_last_subword_embs") ]
+
+            #If factor embeddings are shared, we do not reset them
+            if self.decoder_b.embed_tokens == self.decoder.embed_tokens_b:
+                reset_keys= [k for k in reset_keys if not k.startswith("decoder_b.embed_tokens")]
+
+            for k in reset_keys:
+                state_dict.pop(k)
+            #We set strict to False because we removed some keys
+            super().load_state_dict(state_dict, False)
+        else:
+            super().load_state_dict(state_dict, strict)
 
     def get_target_factors(self, sample, net_output):
         """Get targets from either the sample or the net's output."""
