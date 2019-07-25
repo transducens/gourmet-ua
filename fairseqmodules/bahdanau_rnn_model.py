@@ -245,7 +245,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             pretrained_embed=pretrained_encoder_embed,
             debug=args.debug if 'debug' in args else False
         )
-        if args.freeze_encoder_weights:
+        if 'freeze_encoder_weights' in args and  args.freeze_encoder_weights:
             encoder.freeze_weights()
 
         decoder = GRUDecoderTwoInputs(
@@ -315,12 +315,12 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 debug=args.debug if 'debug' in args else False
         )
 
-        if args.decoder_freeze_embed:
+        if  getattr(args,'decoder_freeze_embed',None):
             decoder.embed_tokens.weight.requires_grad=False
             if args.surface_condition_tags:
                 decoder_b.embed_tokens_b.weight.requires_grad=False
 
-        if args.decoder_freeze_factor_embed:
+        if  getattr(args,'decoder_freeze_factor_embed',None):
             decoder.embed_tokens_b.weight.requires_grad=False
             decoder_b.embed_tokens.weight.requires_grad=False
 
