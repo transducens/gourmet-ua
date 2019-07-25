@@ -780,7 +780,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             self.linear_transf_input_b=None
             self.activ_transf_input_b=None
 
-        self.reset_b_decoder=False
+        self.reset_b_decoder=reset_b_decoder
 
         assert isinstance(self.encoder, FairseqEncoder)
         assert isinstance(self.decoder, GRUDecoderTwoInputs)
@@ -820,6 +820,9 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         Encoders and decoders now are GRUs. Initialization of hidden state
         and output layers similar to Nematus
          """
+
+        #import pdb; pdb.set_trace()
+
         # make sure that all args are properly defaulted (in case there are any new ones)
         base_architecture(args)
 
@@ -1001,7 +1004,8 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         r= cls(encoder, decoder, decoder_b, feedback_encoder,feedback_state_and_last_subword_embs=feedback_state_and_last_subword_embs,apply_transformation_input_b=args.transform_last_state, reset_b_decoder=args.reset_b_decoder if 'reset_b_decoder' in args else False)
         return r
 
-    def load_state_dict(state_dict, strict=True):
+    def load_state_dict(self,state_dict, strict=True):
+        #import pdb; pdb.set_trace()
         if self.reset_b_decoder:
             #TODO: additional encoder is not reset
             reset_keys=[k for k in state_dict.keys() if k.startswith("decoder_b.") or k.startswith("feedback_state_and_last_subword_embs.") or k.startswith("linear_transf_input_b.")]
@@ -1016,6 +1020,10 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
 
             for k in reset_keys:
                 state_dict.pop(k)
+
+            print("Keys loaded: {}".format(state_dict.keys()))
+            print("Keys reset: {}".format(reset_keys))
+
             #We set strict to False because we removed some keys
             super().load_state_dict(state_dict, False)
         else:
