@@ -28,6 +28,11 @@ if "preprocessOnlyLastSubword" in config:
 	if config["preprocessOnlyLastSubword"]:
 		preprocessFairseqFlag=preprocessFairseqFlag+" --async_tags_surface_feed_last"
 
+if "preprocessAddWait" in config:
+	if config["preprocessAddWait"]:
+		preprocessFairseqFlag=preprocessFairseqFlag+" --add_wait_action"
+
+
 
 
 #Output dirs
