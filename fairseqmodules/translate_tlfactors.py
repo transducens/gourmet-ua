@@ -26,6 +26,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         parser.add_argument('--force-factors',help='File that contains the factors that must be included in the output')
         parser.add_argument('--force-surface-forms',help='File that contains the surface forms that must be included in the output')
         parser.add_argument('--independent-factors-models',action='store_true',help='When translating with an ensemble of models, even models (starting with 0) are used to produce factors, and odd models are used to produce surface forms.')
+        parser.add_argument('--add-wait-action',action='store_true',help='A WAIT special factor token helps to preserve syncronism.')
         parser.add_argument('--debug-beam-search',action='store_true',help='Print debug information during beam search')
 
     @staticmethod
@@ -54,6 +55,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         super().__init__(args, src_dict, tgt_dict)
         self.tgt_factors_dict=tgt_factors_dict
         self.src_factors_dict=src_factors_dict
+        self.add_wait_action=args.add_wait_action
 
     @classmethod
     def setup_task(cls, args):
@@ -169,7 +171,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             src_factors_async=src_factors_async_dataset, src_factors_async_sizes=src_factors_async_dataset.sizes if src_factors_async_dataset else None,
             src_factors_dict=self.src_factors_dict,
             tgt_only_first_subword=tgt_only_first_subword_dataset,tgt_only_first_subword_sizes=tgt_only_first_subword_dataset.sizes if tgt_only_first_subword_dataset else None,
-            tgt_only_last_subword=tgt_only_last_subword_dataset,tgt_only_last_subword_sizes=tgt_only_last_subword_dataset.sizes if tgt_only_last_subword_dataset else None
+            tgt_only_last_subword=tgt_only_last_subword_dataset,tgt_only_last_subword_sizes=tgt_only_last_subword_dataset.sizes if tgt_only_last_subword_dataset else None,
+            add_wait_action=self.add_wait_action
 
         )
 

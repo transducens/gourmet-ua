@@ -56,8 +56,9 @@ def main(args):
                 out_f.write(outstr)
                 out_f.write("\n")
 
-    def retain_interleaving_tags(infile,outfile,add_mark=True, match_bpe=True):
+    def retain_interleaving_tags(infile,outfile,add_mark=True, match_bpe=True, add_wait=False):
         NOEOW="@@"
+        WAIT="<<WAIT>>"
         with open(infile) as in_f, open(outfile,"w") as out_f:
             for l in in_f:
                 l=l.rstrip("\n")
@@ -67,21 +68,35 @@ def main(args):
                 o=[]
                 tagp=0
                 if match_bpe:
+                    prev_end=True
                     for w in words:
+                        if add_wait:
+                            if prev_end:
+                                #this is a word beginning
+                                o.append(tags[tagp])
+                            else:
+                                #This is not: add WAIT
+                                o.append(WAIT)
                         if not w.endswith(NOEOW):
                             #This is the end of a word
-                            o.append(tags[tagp])
+                            if not add_wait:
+                                o.append(tags[tagp])
+
                             tagp+=1
+                            prev_end=True
                         else:
                             #This is not
-                            o.append(tags[tagp]+(NOEOW if add_mark else ""))
+                            if not add_wait:
+                                o.append(tags[tagp]+(NOEOW if add_mark else ""))
+
+                            prev_end=False
                 else:
                     o=tags
                 outstr=" ".join(o)
                 out_f.write(outstr)
                 out_f.write("\n")
 
-    def build_dictionary(filenames, src=False, tgt=False, factors=False, add_mark=True):
+    def build_dictionary(filenames, src=False, tgt=False, factors=False, add_mark=True,add_wait=False):
         assert src ^ tgt
 
         in_filenames=filenames
@@ -93,7 +108,7 @@ def main(args):
                 tmpfn=tmpf.name
                 tmpf.close()
                 if factors == True:
-                    retain_interleaving_tags(fn,tmpfn,add_mark)
+                    retain_interleaving_tags(fn,tmpfn,add_mark=add_mark,add_wait=add_wait)
                 else:
                     remove_interleaving_tags(fn,tmpfn)
                 temp_filenames.add(tmpfn)
@@ -156,7 +171,7 @@ def main(args):
 
     #If we are using a second decoder, we need an independent dictionary
     if args.additional_decoder_tl:
-        tgt_factors_dict= build_dictionary([train_path(args.target_lang)], tgt=True,factors=True, add_mark=not args.disable_bpe_marks)
+        tgt_factors_dict= build_dictionary([train_path(args.target_lang)], tgt=True,factors=True, add_mark=not args.disable_bpe_marks, add_wait=args.add_wait_action)
         tgt_factors_dict.save(dict_path(args.target_lang+"factors"))
 
     #If the SL text also contains linguistic factors, create a dictionary for them
@@ -189,7 +204,7 @@ def main(args):
                 if output_prefix.endswith("asyncfactors"):
                     retain_interleaving_tags(input_file,input_temp_file,add_mark=False, match_bpe=False)
                 else:
-                    retain_interleaving_tags(input_file,input_temp_file,add_mark=not args.disable_bpe_marks)
+                    retain_interleaving_tags(input_file,input_temp_file,add_mark=not args.disable_bpe_marks, add_wait=args.add_wait_action)
             input_file=input_temp_file
 
 
@@ -391,6 +406,7 @@ def cli_main():
     #Custom options
     parser.add_argument('--additional_decoder_tl', action='store_true',help='Add an additional decoder instead of interleaving')
     parser.add_argument('--disable_bpe_marks', action='store_true',help='Disable BPE marks on factors')
+    parser.add_argument('--add_wait_action', action='store_true',help='Add a WAIT special token')
     parser.add_argument('--async_tags_surface_feed_first', action='store_true',help='Tags async decoder will receive the first subword of the previously generated surface form.')
     parser.add_argument('--async_tags_surface_feed_last', action='store_true',help='Tags async decoder will receive the last subword of the previously generated surface form.')
     parser.add_argument('--source-factors', action='store_true',help='SL text contains interleaved factors')

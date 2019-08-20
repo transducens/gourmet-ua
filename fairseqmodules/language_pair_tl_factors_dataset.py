@@ -10,6 +10,9 @@ from fairseq import utils
 import numpy as np
 import torch
 
+
+WAIT="<<WAIT>>"
+
 def collate(
     samples, pad_idx, eos_idx, left_pad_source=True, left_pad_target=False,
     input_feeding=True,
@@ -53,6 +56,9 @@ def collate(
     prev_output_tokens_word_end_positions=None
 
     asyncTLFactors=False
+    waitAction=False
+    if samples[0].get('target_factors_no_wait', None) is not None:
+        waitAction=True
     if samples[0].get('target', None) is not None:
 
         if samples[0].get('target_factors_async', None) is not None:
@@ -83,8 +89,9 @@ def collate(
             )
             prev_output_tokens = prev_output_tokens.index_select(0, sort_order)
 
+            key_to_merge= 'target_factors_no_wait' if waitAction else  'target_factors'
             cur_output_factors= merge(
-                'target_factors',
+                key_to_merge,
                 left_pad=left_pad_target,
                 move_eos_to_beginning=False,
             )
@@ -115,6 +122,7 @@ def collate(
                     left_pad=left_pad_target,
                     move_eos_to_beginning=True,
                 )
+
             prev_output_factors = prev_output_factors.index_select(0, sort_order)
 
             #
@@ -194,6 +202,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         src_factors_async=None,src_factors_async_sizes=None,src_factors_dict=None,
         tgt_only_first_subword=None,tgt_only_first_subword_sizes=None,
         tgt_only_last_subword=None,tgt_only_last_subword_sizes=None,
+        add_wait_action=False
     ):
         super().__init__(src, src_sizes, src_dict,
         tgt, tgt_sizes, tgt_dict,
@@ -216,6 +225,8 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         self.tgt_only_first_subword_sizes=tgt_only_first_subword_sizes
         self.tgt_only_last_subword=tgt_only_last_subword
         self.tgt_only_last_subword_sizes=tgt_only_last_subword_sizes
+
+        self.add_wait_action=add_wait_action
 
     def __getitem__(self, index):
         d=super().__getitem__(index)
@@ -245,6 +256,16 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
             d['target_only_last_subword']=tgt_only_last_subword_item
 
         d['position_target_word_ends']=[ i for i,w in enumerate(d['target']) if len(self.tgt_dict.string([w]).strip()) > 0 and  not self.tgt_dict.string([w]).endswith("@@") ]
+
+        if self.add_wait_action:
+            #create a new target_factors in which the WAIT actions are replaced by the corresponding token
+            d['target_factors_no_wait']=tgt_factors_item
+            prevToken=None
+            for i in range(len(d['target_factors_no_wait'])):
+                if d['target_factors_no_wait'][i] != self.tgt_factors_dict[WAIT]:
+                    prevToken=d['target_factors_no_wait'][i]
+                else:
+                    d['target_factors_no_wait'][i]=prevToken
 
         return d
 
