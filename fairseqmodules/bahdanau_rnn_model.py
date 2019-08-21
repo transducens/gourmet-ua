@@ -143,7 +143,11 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
         #Hack to call parent staticmethod
         BahdanauRNNModel.add_args(parser)
         parser.add_argument('--tags-condition-end', default=False, action='store_true',
-                            help='Tags condition surface form decoder only at the end, as in lexical model')
+                            help='Tags condition surface form decoder only at the end, as in lexical model. Surface forms condition tags decoder only at the end, as in lexical model.')
+        parser.add_argument('--tags-condition-end-a', default=False, action='store_true',
+                            help='Tags condition surface form decoder only at the end, as in lexical model.')
+        parser.add_argument('--tags-condition-end-b', default=False, action='store_true',
+                            help='Surface forms condition tags decoder only at the end, as in lexical model.')
         parser.add_argument('--surface-condition-tags', default=False, action='store_true',
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
@@ -262,7 +266,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             pretrained_embed=pretrained_decoder_embed,
             pretrained_embed_b=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
-            b_condition_end=args.tags_condition_end,
+            b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_a',None),
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
@@ -286,7 +290,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 pretrained_embed=pretrained_decoder_embed_b,
                 pretrained_embed_b=pretrained_decoder_embed,
                 share_input_output_embed=args.share_decoder_input_output_embed,
-                b_condition_end=args.tags_condition_end,
+                b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_b',None),
                 cond_gru=args.cond_gru if 'cond_gru' in args else False,
                 adaptive_softmax_cutoff=(
                     options.eval_str_list(args.adaptive_softmax_cutoff, type=int)

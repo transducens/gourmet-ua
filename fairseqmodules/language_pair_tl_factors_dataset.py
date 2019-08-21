@@ -10,7 +10,6 @@ from fairseq import utils
 import numpy as np
 import torch
 
-
 WAIT="<<WAIT>>"
 
 def collate(
