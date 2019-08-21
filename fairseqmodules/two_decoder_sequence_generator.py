@@ -1108,7 +1108,8 @@ class EnsembleModel(torch.nn.Module):
                     if tokens_in_b_input[i][0]==dict_b[WAIT]:
                         #FInd the righmost non-wait token:
                         tokens_in_b_input[i][0]=sorted( [ (i,w) for i,w in enumerate(tokens_in_b[i]) if w != dict_b[WAIT]  ] , key=lambda tup: tup[0], reverse=True )[0]
-
+                if TwoDecoderSequenceGenerator.DEBUG:
+                    print("After adjusting inputs: words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b_input ] ))
                 decoder_out = list(dec(tokens_in_a,tokens_in_b_input, encoder_out, incremental_state= self.incremental_states_factors[model] if model in self.models_factors else self.incremental_states[model] ))
         else:
             if self.async and is_decoder_b_step:
