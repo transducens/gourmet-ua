@@ -797,6 +797,10 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
         BahdanauRNNModel.add_args(parser)
         parser.add_argument('--tags-condition-end', default=False, action='store_true',
                             help='Tags condition surface form decoder only at the end, as in lexical model')
+        parser.add_argument('--tags-condition-end-a', default=False, action='store_true',
+                            help='Tags condition surface form decoder only at the end, as in lexical model')
+        parser.add_argument('--tags-condition-end-b', default=False, action='store_true',
+                            help='Tags condition surface form decoder only at the end, as in lexical model')
         parser.add_argument('--feedback-encoder', default=False, action='store_true',
                             help='Use an encoder to condense all the previous surface forms.')
         parser.add_argument('--feedback-state-and-last-subword', default=False, action='store_true',
@@ -947,7 +951,7 @@ class BahdanauRNNTwoDecodersMutualInfluenceAsyncModel(BahdanauRNNModel):
             pretrained_embed=pretrained_decoder_embed,
             pretrained_embed_b=pretrained_decoder_embed_b,
             share_input_output_embed=args.share_decoder_input_output_embed,
-            b_condition_end=args.tags_condition_end,
+            b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_a',None),
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
