@@ -259,7 +259,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
 
         if self.add_wait_action:
             #create a new target_factors in which the WAIT actions are replaced by the corresponding token
-            d['target_factors_no_wait']=tgt_factors_item
+            d['target_factors_no_wait']=tgt_factors_item.clone().detach()
             prevToken=None
             for i in range(len(d['target_factors_no_wait'])):
                 if d['target_factors_no_wait'][i] != self.tgt_factors_dict.index(WAIT):
