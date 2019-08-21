@@ -262,7 +262,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
             d['target_factors_no_wait']=tgt_factors_item
             prevToken=None
             for i in range(len(d['target_factors_no_wait'])):
-                if d['target_factors_no_wait'][i] != self.tgt_factors_dict[WAIT]:
+                if d['target_factors_no_wait'][i] != self.tgt_factors_dict.index(WAIT):
                     prevToken=d['target_factors_no_wait'][i]
                 else:
                     d['target_factors_no_wait'][i]=prevToken
