@@ -1104,10 +1104,10 @@ class EnsembleModel(torch.nn.Module):
                                 input_state[incremental_state_key][state_comp_idx][k]=state_comp_dict[k]
             else:
                 tokens_in_b_input=tokens_in_b[:,-1:]
-                for i in range(len(tokens_in_b_input.size(0))):
-                    if tokens_in_b_input[i][0]==dict_b[WAIT]:
+                for i in range(tokens_in_b_input.size(0)):
+                    if tokens_in_b_input[i][0]==dict_b.index(WAIT):
                         #FInd the righmost non-wait token:
-                        tokens_in_b_input[i][0]=sorted( [ (i,w) for i,w in enumerate(tokens_in_b[i]) if w != dict_b[WAIT]  ] , key=lambda tup: tup[0], reverse=True )[0]
+                        tokens_in_b_input[i][0]=sorted( [ (i,w) for i,w in enumerate(tokens_in_b[i]) if w != dict_b.index(WAIT)  ] , key=lambda tup: tup[0], reverse=True )[0][1]
 
                 decoder_out = list(dec(tokens_in_a,tokens_in_b_input, encoder_out, incremental_state= self.incremental_states_factors[model] if model in self.models_factors else self.incremental_states[model] ))
         else:
