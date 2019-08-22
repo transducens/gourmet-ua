@@ -287,13 +287,13 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 num_layers=args.decoder_layers,
                 dropout_in=args.decoder_dropout_in,
                 dropout_out=args.decoder_dropout_out,
-                attention=options.eval_bool(args.decoder_attention),
+                attention=options.eval_bool(args.decoder_attention) and not getattr(args,'decoder_b_ignores_encoder',False),
                 encoder_output_units=encoder.output_units,
                 pretrained_embed=pretrained_decoder_embed_b,
                 pretrained_embed_b=pretrained_decoder_embed,
                 share_input_output_embed=args.share_decoder_input_output_embed,
                 b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_b',None),
-                cond_gru=args.cond_gru if 'cond_gru' in args else False,
+                cond_gru=getattr(args,'cond_gru',False) and not getattr(args,'decoder_b_ignores_encoder',False),
                 ignore_encoder_input=getattr(args,'decoder_b_ignores_encoder',False),
                 adaptive_softmax_cutoff=(
                     options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
@@ -1871,7 +1871,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 for layer in range(num_layers)
             ])
 
-            assert not (self.ignore_encoder_input and (attention is not None))
+            assert not (self.ignore_encoder_input and (attention == True))
             if attention:
                 # TODO make bias configurable
                 self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, dropout=0.0)#bias = True like Bahdanau
