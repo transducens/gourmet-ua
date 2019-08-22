@@ -148,6 +148,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='Tags condition surface form decoder only at the end, as in lexical model.')
         parser.add_argument('--tags-condition-end-b', default=False, action='store_true',
                             help='Surface forms condition tags decoder only at the end, as in lexical model.')
+        parser.add_argument('--gate-output-a', default=False, action='store_true',
+                            help='Output of surface form decoder constains a gate to control influence of tags.')
         parser.add_argument('--surface-condition-tags', default=False, action='store_true',
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
         parser.add_argument('--decoder-b-ignores-encoder', default=False, action='store_true',
@@ -270,6 +272,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             share_input_output_embed=args.share_decoder_input_output_embed,
             b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_a',None),
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
+            gate_combination= getattr(args,'gate_output_a',False),
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -1813,7 +1816,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self, dictionary,dictionary_b,size_input_b=None, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None, pretrained_embed_b=None,
-        share_input_output_embed=False, b_condition_end=False , cond_gru=False , ignore_encoder_input=False, adaptive_softmax_cutoff=None,debug=False
+        share_input_output_embed=False, b_condition_end=False , cond_gru=False , ignore_encoder_input=False , gate_combination=False, adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
@@ -1827,6 +1830,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         self.b_condition_end = b_condition_end
         self.cond_gru=cond_gru
+        self.gate_combination=gate_combination
 
         self.adaptive_softmax = None
         num_embeddings = len(dictionary)
@@ -1889,9 +1893,17 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 for layer in range(num_layers)
             ])
 
+        if self.gate_combination:
+            self.gate_linear_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
+            self.gate_linear_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
+            self.gate_activation=nn.Sigmoid()
+            self.logit_prev_a=Linear(embed_dim, out_embed_dim, dropout=dropout_out)
+            self.logit_prev_b=Linear(embed_dim if self.embed_tokens_b else size_input_b, out_embed_dim, dropout=dropout_out)
+        else:
+            self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
+
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
-        self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
         if self.b_condition_end:
             self.logit_tag = Linear((embed_dim if self.embed_tokens_b else size_input_b), out_embed_dim, dropout=dropout_out)
         if self.ignore_encoder_input:
@@ -1978,6 +1990,9 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             #x_b represents a hidden state
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
         logit_tag_input=x_b
+
+        logit_prev_input_a=x
+        logit_prev_input_b=x_b
 
         #Concatenate both
         if not self.b_condition_end:
@@ -2099,7 +2114,11 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             attn_scores = None
 
         #deep output like nematus
-        logit_prev_out=self.logit_prev(logit_prev_input)
+        if self.gate_combination:
+            e=self.gate_activation(self.gate_linear_ctx(torch.stack(context_vectors).transpose(0,1))+self.gate_linear_lstm(x))
+            logit_prev_out=e*self.logit_prev_a(logit_prev_input_a) + (1-e)*self.logit_prev_b(logit_prev_input_b)
+        else:
+            logit_prev_out=self.logit_prev(logit_prev_input)
         if self.b_condition_end:
             logit_tag_out=self.logit_tag(logit_tag_input)
         logit_lstm_out=self.logit_lstm(x)
