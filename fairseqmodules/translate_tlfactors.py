@@ -26,7 +26,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         parser.add_argument('--force-factors',help='File that contains the factors that must be included in the output')
         parser.add_argument('--force-surface-forms',help='File that contains the surface forms that must be included in the output')
         parser.add_argument('--independent-factors-models',action='store_true',help='When translating with an ensemble of models, even models (starting with 0) are used to produce factors, and odd models are used to produce surface forms.')
-        parser.add_argument('--add-wait-action',action='store_true',help='A WAIT special factor token helps to preserve syncronism.')
+        parser.add_argument('--add-wait-action',action='store_true',help='A WAIT special factor token helps to preserve syncronism. At the input of the SF decoder, the WAIT action is replaced with the preevious non-WAIT tag.')
+        parser.add_argument('--add-wait-action-no-replace',action='store_true',help='A WAIT special factor token helps to preserve syncronism. At the input of the SF decoder, the WAIT action is NOT replaced with the preevious non-WAIT tag.')
         parser.add_argument('--debug-beam-search',action='store_true',help='Print debug information during beam search')
 
     @staticmethod
@@ -55,7 +56,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         super().__init__(args, src_dict, tgt_dict)
         self.tgt_factors_dict=tgt_factors_dict
         self.src_factors_dict=src_factors_dict
-        self.add_wait_action=args.add_wait_action
+        self.add_wait_action=args.add_wait_action or args.add_wait_action_no_replace
+        self.replace_wait_at_sf_input=args.add_wait_action
 
     @classmethod
     def setup_task(cls, args):
@@ -172,7 +174,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
             src_factors_dict=self.src_factors_dict,
             tgt_only_first_subword=tgt_only_first_subword_dataset,tgt_only_first_subword_sizes=tgt_only_first_subword_dataset.sizes if tgt_only_first_subword_dataset else None,
             tgt_only_last_subword=tgt_only_last_subword_dataset,tgt_only_last_subword_sizes=tgt_only_last_subword_dataset.sizes if tgt_only_last_subword_dataset else None,
-            add_wait_action=self.add_wait_action
+            add_wait_action=self.add_wait_action,
+            replace_wait_at_sf_input=self.replace_wait_at_sf_input
 
         )
 
@@ -226,6 +229,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 no_repeat_ngram_size=args.no_repeat_ngram_size,
                 only_output_factors=args.print_factors,
                 separate_factors_sf_models=args.independent_factors_models,
+                replace_wait=self.replace_wait_at_sf_input,
                 debug=args.debug_beam_search
             )
 

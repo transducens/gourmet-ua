@@ -55,9 +55,9 @@ def collate(
     prev_output_tokens_word_end_positions=None
 
     asyncTLFactors=False
-    waitAction=False
+    waitActionReplace=False
     if samples[0].get('target_factors_no_wait', None) is not None:
-        waitAction=True
+        waitActionReplace=True
     if samples[0].get('target', None) is not None:
 
         if samples[0].get('target_factors_async', None) is not None:
@@ -88,7 +88,7 @@ def collate(
             )
             prev_output_tokens = prev_output_tokens.index_select(0, sort_order)
 
-            key_to_merge= 'target_factors_no_wait' if waitAction else  'target_factors'
+            key_to_merge= 'target_factors_no_wait' if waitActionReplace else  'target_factors'
             cur_output_factors= merge(
                 key_to_merge,
                 left_pad=left_pad_target,
@@ -201,7 +201,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         src_factors_async=None,src_factors_async_sizes=None,src_factors_dict=None,
         tgt_only_first_subword=None,tgt_only_first_subword_sizes=None,
         tgt_only_last_subword=None,tgt_only_last_subword_sizes=None,
-        add_wait_action=False
+        add_wait_action=False,replace_wait_at_sf_input=False
     ):
         super().__init__(src, src_sizes, src_dict,
         tgt, tgt_sizes, tgt_dict,
@@ -226,6 +226,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         self.tgt_only_last_subword_sizes=tgt_only_last_subword_sizes
 
         self.add_wait_action=add_wait_action
+        self.replace_wait_at_sf_input=replace_wait_at_sf_input
 
     def __getitem__(self, index):
         d=super().__getitem__(index)
@@ -256,7 +257,7 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
 
         d['position_target_word_ends']=[ i for i,w in enumerate(d['target']) if len(self.tgt_dict.string([w]).strip()) > 0 and  not self.tgt_dict.string([w]).endswith("@@") ]
 
-        if self.add_wait_action:
+        if self.add_wait_action and self.replace_wait_at_sf_input :
             #create a new target_factors in which the WAIT actions are replaced by the corresponding token
             d['target_factors_no_wait']=tgt_factors_item.clone().detach()
             prevToken=None

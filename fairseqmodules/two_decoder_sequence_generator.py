@@ -155,6 +155,7 @@ class TwoDecoderSequenceGenerator(object):
         no_repeat_ngram_size=0,
         only_output_factors=False,
         separate_factors_sf_models=False,
+        replace_wait_at_sf_input=False
         debug=False
     ):
         """Generates translations of a given source sentence.
@@ -217,6 +218,7 @@ class TwoDecoderSequenceGenerator(object):
 
         self.only_output_factors=only_output_factors
         self.independent_factors_models=separate_factors_sf_models
+        self.replace_wait_at_sf_input=replace_wait_at_sf_input
 
         assert sampling_topk < 0 or sampling, '--sampling-topk requires --sampling'
 
@@ -251,7 +253,7 @@ class TwoDecoderSequenceGenerator(object):
                 with these tokens
             forced_factors: List[List]: factors to be printed in each batch element
         """
-        model = EnsembleModel(models,self.tgt_dict,self.tgt_dict_b,self.independent_factors_models)
+        model = EnsembleModel(models,self.tgt_dict,self.tgt_dict_b,self.independent_factors_models,self.replace_wait_at_sf_input)
         if not self.retain_dropout:
             model.eval()
 
@@ -814,7 +816,7 @@ class TwoDecoderSequenceGenerator(object):
 class EnsembleModel(torch.nn.Module):
     """A wrapper around an ensemble of models."""
 
-    def __init__(self, models,tgt_dict,tgt_dict_b,independent_factors_models=False):
+    def __init__(self, models,tgt_dict,tgt_dict_b,independent_factors_models=False,replace_wait_at_sf_input=False):
         super().__init__()
         self.async=False
         if isinstance(models[0],lstm_two_decoders_async_model.LSTMTwoDecodersAsyncModel) or isinstance(models[0],  bahdanau_rnn_model.BahdanauRNNTwoDecodersAsyncModel) or isinstance(models[0],  bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel):
@@ -837,6 +839,8 @@ class EnsembleModel(torch.nn.Module):
         if independent_factors_models:
             assert len(models) > 1
         self.independent_factors_models=independent_factors_models
+
+        self.replace_wait_at_sf_input=replace_wait_at_sf_input
 
         if self.independent_factors_models:
             #Even positions: factors
@@ -1104,10 +1108,11 @@ class EnsembleModel(torch.nn.Module):
                                 input_state[incremental_state_key][state_comp_idx][k]=state_comp_dict[k]
             else:
                 tokens_in_b_input=tokens_in_b[:,-1:]
-                for i in range(tokens_in_b_input.size(0)):
-                    if tokens_in_b_input[i][0]==dict_b.index(WAIT):
-                        #FInd the righmost non-wait token:
-                        tokens_in_b_input[i][0]=sorted( [ (i,w) for i,w in enumerate(tokens_in_b[i]) if w != dict_b.index(WAIT)  ] , key=lambda tup: tup[0], reverse=True )[0][1]
+                if self.replace_wait_at_sf_input:
+                    for i in range(tokens_in_b_input.size(0)):
+                        if tokens_in_b_input[i][0]==dict_b.index(WAIT):
+                            #FInd the righmost non-wait token:
+                            tokens_in_b_input[i][0]=sorted( [ (i,w) for i,w in enumerate(tokens_in_b[i]) if w != dict_b.index(WAIT)  ] , key=lambda tup: tup[0], reverse=True )[0][1]
                 if TwoDecoderSequenceGenerator.DEBUG:
                     print("After adjusting inputs: words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b_input ] ))
                 decoder_out = list(dec(tokens_in_a,tokens_in_b_input, encoder_out, incremental_state= self.incremental_states_factors[model] if model in self.models_factors else self.incremental_states[model] ))
