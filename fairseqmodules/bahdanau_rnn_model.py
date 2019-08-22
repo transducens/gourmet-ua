@@ -1851,6 +1851,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.encoder_output_units = encoder_output_units
 
         if self.ignore_encoder_input:
+            encoder_output_units=0
             self.linear_initial_state=None
             self.activ_initial_state=None
         else:
