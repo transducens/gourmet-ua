@@ -150,6 +150,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='Surface forms condition tags decoder only at the end, as in lexical model.')
         parser.add_argument('--surface-condition-tags', default=False, action='store_true',
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
+        parser.add_argument('--decoder-b-ignores-encoder', default=False, action='store_true',
+                            help='Auxiliary decoder ignores encoder')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
         parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
@@ -292,6 +294,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 share_input_output_embed=args.share_decoder_input_output_embed,
                 b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_b',None),
                 cond_gru=args.cond_gru if 'cond_gru' in args else False,
+                ignore_encoder_input=getattr(args,'decoder_b_ignores_encoder',False),
                 adaptive_softmax_cutoff=(
                     options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                     if args.criterion == 'adaptive_loss' else None
@@ -1810,7 +1813,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self, dictionary,dictionary_b,size_input_b=None, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None, pretrained_embed_b=None,
-        share_input_output_embed=False, b_condition_end=False , cond_gru=False , adaptive_softmax_cutoff=None,debug=False
+        share_input_output_embed=False, b_condition_end=False , cond_gru=False , ignore_encoder_input=False, adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
@@ -1819,6 +1822,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.share_input_output_embed = share_input_output_embed
         self.need_attn = True
 
+        self.ignore_encoder_input=ignore_encoder_input
         self.debug=debug
 
         self.b_condition_end = b_condition_end
@@ -1846,10 +1850,16 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         self.encoder_output_units = encoder_output_units
 
-        #linear + tanh for initial state
-        #TODO: we are assuming encoder is always bidirectional
-        self.linear_initial_state=Linear(encoder_output_units,hidden_size,dropout=dropout_in)
-        self.activ_initial_state=nn.Tanh()
+        if self.ignore_encoder_input:
+            self.linear_initial_state=None
+            self.activ_initial_state=None
+        else:
+            #linear + tanh for initial state
+            #TODO: we are assuming encoder is always bidirectional
+            self.linear_initial_state=Linear(encoder_output_units,hidden_size,dropout=dropout_in)
+            self.activ_initial_state=nn.Tanh()
+
+        assert not (self.ignore_encoder_input and self.cond_gru)
 
         if not self.cond_gru:
             self.layers = nn.ModuleList([
@@ -1860,6 +1870,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 )
                 for layer in range(num_layers)
             ])
+
+            assert not (self.ignore_encoder_input and (attention is not None))
             if attention:
                 # TODO make bias configurable
                 self.attention = ConcatAttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=True, dropout=0.0)#bias = True like Bahdanau
@@ -1881,7 +1893,10 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
         if self.b_condition_end:
             self.logit_tag = Linear((embed_dim if self.embed_tokens_b else size_input_b), out_embed_dim, dropout=dropout_out)
-        self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
+        if self.ignore_encoder_input:
+            self.logit_ctx=None
+        else:
+            self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
         self.activ_deep_output=nn.Tanh()
 
         if adaptive_softmax_cutoff is not None:
@@ -1946,6 +1961,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         bsz, seqlen = prev_output_tokens.size()
 
         # get outputs from encoder
+
         encoder_outs, encoder_hiddens = encoder_out[:2]
         srclen = encoder_outs.size(0)
 
@@ -1981,28 +1997,31 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         else:
             num_layers = len(self.layers)
 
-            #Copy initialization from Nematus:
-            # - Concatenate layers: IMPOSSIBLE, we only have access to last layer
-            # - Average over time
-            # - Apply FF + tanh
+            if self.ignore_encoder_input:
+                hidden=x.new_zeros(bsz,self.hidden_size)
+            else:
+                #Copy initialization from Nematus:
+                # - Concatenate layers: IMPOSSIBLE, we only have access to last layer
+                # - Average over time
+                # - Apply FF + tanh
 
-            #shape of encoder_outs: (seq_len,bsz,num_directions*hidden_size)
-            # shape of encoder_padding_mask: (seq_len,bsz)
-            # shape of division: (bsz,num_directions*hidden_size)/ (bsz): we add unsqueeze(1) to make dimensions match
-            #print("encoder_outs: {}".format(encoder_outs))
-            #print("encoder_padding_mask: {}".format(encoder_padding_mask))
-            avg_states_num=torch.sum(encoder_outs,0)
-            avg_states_denom=encoder_outs.size(0) -  torch.sum(encoder_padding_mask,0).unsqueeze(1).type_as(encoder_outs) if encoder_padding_mask is not None else encoder_outs.size(0)
+                #shape of encoder_outs: (seq_len,bsz,num_directions*hidden_size)
+                # shape of encoder_padding_mask: (seq_len,bsz)
+                # shape of division: (bsz,num_directions*hidden_size)/ (bsz): we add unsqueeze(1) to make dimensions match
+                #print("encoder_outs: {}".format(encoder_outs))
+                #print("encoder_padding_mask: {}".format(encoder_padding_mask))
+                avg_states_num=torch.sum(encoder_outs,0)
+                avg_states_denom=encoder_outs.size(0) -  torch.sum(encoder_padding_mask,0).unsqueeze(1).type_as(encoder_outs) if encoder_padding_mask is not None else encoder_outs.size(0)
 
-            avg_states=torch.div( avg_states_num , avg_states_denom  )
+                avg_states=torch.div( avg_states_num , avg_states_denom  )
 
-            #print("avg_states_num({}): {}".format(avg_states_num.size(),avg_states_num))
-            #print("avg_states_denom({}): {}".format(avg_states_denom.size() if not isinstance(avg_states_denom,int) else 0,avg_states_denom))
-            #print("avg_states({}): {}".format(avg_states.size(),avg_states))
+                #print("avg_states_num({}): {}".format(avg_states_num.size(),avg_states_num))
+                #print("avg_states_denom({}): {}".format(avg_states_denom.size() if not isinstance(avg_states_denom,int) else 0,avg_states_denom))
+                #print("avg_states({}): {}".format(avg_states.size(),avg_states))
 
-            #shape: (bsz,num_directions*hidden_size)
-            hidden=self.activ_initial_state(self.linear_initial_state(avg_states))
-            #shape: (bsz,decoder_hidden_size)
+                #shape: (bsz,num_directions*hidden_size)
+                hidden=self.activ_initial_state(self.linear_initial_state(avg_states))
+                #shape: (bsz,decoder_hidden_size)
 
             #TODO: All layers have the same initial state: problematic!!!!
             prev_hiddens=[hidden for i in range(num_layers)]
@@ -2032,7 +2051,10 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             if self.cond_gru:
                 input = x[j, :, :]
             else:
-                input = torch.cat((x[j, :, :], context_vector), dim=1)
+                if self.ignore_encoder_input:
+                    input = x[j, :, :]
+                else:
+                    input = torch.cat((x[j, :, :], context_vector), dim=1)
 
             #TODO: multi-layer IS WRONG
             assert len(self.layers) == 1
@@ -2076,11 +2098,14 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             attn_scores = None
 
         #deep output like nematus
-        logit_ctx_out=self.logit_ctx( torch.stack(context_vectors).transpose(0,1)  )
         logit_prev_out=self.logit_prev(logit_prev_input)
         if self.b_condition_end:
             logit_tag_out=self.logit_tag(logit_tag_input)
         logit_lstm_out=self.logit_lstm(x)
+        if not self.ignore_encoder_input:
+            logit_ctx_out=self.logit_ctx( torch.stack(context_vectors).transpose(0,1)  )
+        else:
+            logit_ctx_out=torch.zeros_like(logit_prev_out)
 
         if self.b_condition_end:
             x=self.activ_deep_output(logit_ctx_out + logit_prev_out + logit_lstm_out + logit_tag_out)
