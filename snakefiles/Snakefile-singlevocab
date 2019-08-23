@@ -504,11 +504,25 @@ rule apply_bpe_train:
         ,
         vocab="{dir}/".format(dir=modelDir)+"vocab.{lang1}{lang2}.bpe".format(lang1=LANG1, lang2=LANG2)
     output:
-        "{pref}.clean-bpe.{lang}"
+        "{pref}.clean-bpe-prelengthfilter.{lang}"
     params:
         mark=lambda w: addMark[w.lang]
     shell:
         "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi; {subword_nmt}/subword_nmt/apply_bpe.py  --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
+
+
+rule clean_postbpe:
+    input:
+        "{pref}.clean-bpe-prelengthfilter."+"{lang1}".format(lang1=LANG1)
+        ,
+        "{pref}.clean-bpe-prelengthfilter."+"{lang2}".format(lang2=LANG2)
+    output:
+        "{pref}.clean-bpe."+"{lang1}".format(lang1=LANG1)
+        ,
+        "{pref}.clean-bpe."+"{lang2}".format(lang2=LANG2),
+        "{pref}.lines-retained"
+    shell:
+        "cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG1}  ; cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG2}; {moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.clean-bpe-prelengthfilter.nointerl {LANG1} {LANG2} {wildcards.pref}.clean-bpe.nointerl 1 100 {wildcards.pref}.clean-bpe.lines-retained; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1}  > {wildcards.pref}.clean-bpe.{LANG1}; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2}  > {wildcards.pref}.clean-bpe.{LANG2}"
 
 ruleorder: learn_bpe_external > learn_bpe
 
