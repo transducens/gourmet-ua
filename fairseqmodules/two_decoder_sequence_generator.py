@@ -869,6 +869,12 @@ class EnsembleModel(torch.nn.Module):
         self.tgt_dict=tgt_dict
         self.tgt_dict_b=tgt_dict_b
 
+        # Check whether tags have BPE marks
+        if not any( self.tgt_dict_b[i].endswith(SPLITWORDMARK)  for i in range(len(self.tgt_dict_b)) ):
+            self.tags_wait_marks=True
+        else:
+            self.tags_wait_marks=False
+
     def has_encoder(self):
         return hasattr(self.models[0], 'encoder')
 
@@ -954,9 +960,11 @@ class EnsembleModel(torch.nn.Module):
 
             #Count number of generated full surface forms for each hypothesis to decide the factor to force
             if forced_factors:
+                if self.tags_wait_marks:
+                    force_factors=[f for f in forced_factors if f != self.tgt_dict_b.index(WAIT) ]
                 forced_word_ids=[]
                 for i in range(tokens_in_b.size(0)):
-                    if self.async:
+                    if self.async or self.tags_wait_marks:
                         #TODO: review me
                         # tokens_in_b[i][1:] because first token is padding
                         cand_position=len( [t for t in tokens_in_b[i][1:] if not  self.tgt_dict[ t ].endswith(SPLITWORDMARK) ])
@@ -964,7 +972,15 @@ class EnsembleModel(torch.nn.Module):
                         #Forced factor index is just based on length of already generated factors
                         cand_position=tokens_in_a.size(1)-1
                     next_factor= forced_factors[cand_position] if cand_position < len(forced_factors) else self.tgt_dict_b.eos()
+
+                    if self.tags_wait_marks:
+                        #If the previous surface form is not and end of word, we
+                        #do not force anything
+                        if  self.tgt_dict[ tokens_in_b[i][-1] ].endswith(SPLITWORDMARK):
+                            next_factor=None
+
                     forced_word_ids.append(next_factor)
+
 
             #Async:
             #if last element of tokens_in_b is not an end of word:
@@ -1143,8 +1159,9 @@ class EnsembleModel(torch.nn.Module):
             if TwoDecoderSequenceGenerator.DEBUG:
                 print("Forcing the folowwing word ids: {}".format(forced_word_ids))
             for i,fid in enumerate(forced_word_ids):
-                probs[i][:]=-math.inf
-                probs[i][fid]=0.0
+                if fid != None:
+                    probs[i][:]=-math.inf
+                    probs[i][fid]=0.0
 
         return probs, attn
 
