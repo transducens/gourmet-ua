@@ -117,6 +117,8 @@ if "segParams" in config:
     segParams=config["segParams"]
 
 bpeVocThreshold=1
+if "bpeVocThreshold" in config:
+	bpeVocThreshold=config["bpeVocThreshold"]
 
 tokOptions="-a"
 if interleaving_sl or interleaving_tl:
