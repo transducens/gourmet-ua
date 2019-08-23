@@ -116,6 +116,8 @@ segParams=""
 if "segParams" in config:
     segParams=config["segParams"]
 
+bpeVocThreshold=1
+
 tokOptions="-a"
 if interleaving_sl or interleaving_tl:
     tokOptions="-a -no-escape"
@@ -504,7 +506,7 @@ rule apply_bpe_train:
     params:
         mark=lambda w: addMark[w.lang]
     shell:
-        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi; {subword_nmt}/subword_nmt/apply_bpe.py  --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
+        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi; {subword_nmt}/subword_nmt/apply_bpe.py  --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
 
 ruleorder: learn_bpe_external > learn_bpe
 
