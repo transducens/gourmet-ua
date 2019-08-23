@@ -155,7 +155,7 @@ class TwoDecoderSequenceGenerator(object):
         no_repeat_ngram_size=0,
         only_output_factors=False,
         separate_factors_sf_models=False,
-        replace_wait_at_sf_input=False
+        replace_wait_at_sf_input=False,
         debug=False
     ):
         """Generates translations of a given source sentence.

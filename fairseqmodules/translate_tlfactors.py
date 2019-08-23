@@ -229,7 +229,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                 no_repeat_ngram_size=args.no_repeat_ngram_size,
                 only_output_factors=args.print_factors,
                 separate_factors_sf_models=args.independent_factors_models,
-                replace_wait=self.replace_wait_at_sf_input,
+                replace_wait_at_sf_input=self.replace_wait_at_sf_input,
                 debug=args.debug_beam_search
             )
 
