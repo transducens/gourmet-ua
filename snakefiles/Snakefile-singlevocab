@@ -514,7 +514,7 @@ rule learn_bpe:
     output:
         modelDir+"/vocab."+"{lang1}{lang2}.bpe".format(lang1=LANG1, lang2=LANG2 )
     shell:
-        "cat {input}|  sed 's:{wwMark}::g'  | sed -r 's:[ ]+: :g' | {subword_nmt}/subword_nmt/learn_bpe.py -s {bpeOperations}  > {output}"
+        "for F in {input} ; do cat $F |  sed 's:{wwMark}::g'  | sed -r 's:[ ]+: :g'  > $F.bpeready ; done;  VOCS=""; INS=""; for F in {input} ; do INS=\"$INS $F.bpeready\" ; VOCS=\"$VOCS {output}.bpevoc.${{F##*.}}\" ; done  {subword_nmt}/subword_nmt/learn_joint_bpe_and_vocab.py --input $INS -s {bpeOperations}  -o {output} --write-vocabulary $VOCS"
 
 rule learn_bpe_external:
     input:
