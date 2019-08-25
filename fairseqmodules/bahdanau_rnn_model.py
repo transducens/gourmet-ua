@@ -268,6 +268,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
         )
 
         if getattr(args,'two_encoders',False):
+            if args.encoder_freeze_embed:
+                pretrained_encoder_embed_b.weight.requires_grad = False
             encoder_b=GRUEncoder(
                 dictionary=task.source_dictionary,
                 embed_dim=args.encoder_embed_dim,
