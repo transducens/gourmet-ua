@@ -888,6 +888,8 @@ class EnsembleModel(torch.nn.Module):
         encoder_outs_slfactors=[]
         if 'src_factors' in encoder_input:
             encoder_outs_slfactors=[ model.encoder_b(encoder_input['src_factors'],encoder_input['src_factors_lengths']) for model in self.models ]
+        elif hasattr(self.models[0],'encoder_b') and self.models[0].encoder_b != None:
+            encoder_outs_slfactors=[ model.encoder_b(encoder_input['src_tokens'],encoder_input['src_lengths']) for model in self.models ]
         return [model.encoder(encoder_input['src_tokens'],encoder_input['src_lengths']) for model in self.models],[model.encoder(encoder_input['src_tokens'],encoder_input['src_lengths']) for model in self.models_factors],encoder_outs_slfactors
 
     @torch.no_grad()

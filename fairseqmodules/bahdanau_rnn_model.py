@@ -128,11 +128,12 @@ class BahdanauRNNModel(LSTMModel):
 
 @register_model('bahdanau_rnn_two_decoders_sync')
 class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
-    def __init__(self, encoder, decoder, decoder_b):
+    def __init__(self, encoder, decoder, decoder_b,encoder_b):
         BaseFairseqModel.__init__(self)
         self.encoder = encoder
         self.decoder = decoder
         self.decoder_b = decoder_b
+        self.encoder_b=encoder_b
         assert isinstance(self.encoder, FairseqEncoder)
         assert isinstance(self.decoder, GRUDecoderTwoInputs)
         assert isinstance(self.decoder_b, GRUDecoder) or isinstance(self.decoder_b, GRUDecoderTwoInputs)
@@ -154,6 +155,10 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
         parser.add_argument('--decoder-b-ignores-encoder', default=False, action='store_true',
                             help='Auxiliary decoder ignores encoder')
+        parser.add_argument('--two-encoders', default=False, action='store_true',
+                            help='One encoder for each output')
+        parser.add_argument('--encoders-share-embeddings', default=False, action='store_true',
+                            help='If there are two encoders, they share SL word embeddings')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
         parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
@@ -186,13 +191,21 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             return utils.load_embedding(embed_dict, dictionary, embed_tokens)
 
         if args.encoder_embed_path:
-            pretrained_encoder_embed = load_pretrained_embedding_from_file(
+            pretrained_encoder_embed = pretrained_encoder_embed_b = load_pretrained_embedding_from_file(
                 args.encoder_embed_path, task.source_dictionary, args.encoder_embed_dim)
         else:
             num_embeddings = len(task.source_dictionary)
             pretrained_encoder_embed = Embedding(
                 num_embeddings, args.encoder_embed_dim, task.source_dictionary.pad()
             )
+            if getattr(args,'two_encoders',False):
+                if getattr(args,'encoders_share_embeddings',False):
+                    pretrained_encoder_embed_b=pretrained_encoder_embed
+                else:
+                    pretrained_encoder_embed_b = Embedding(
+                        num_embeddings, args.encoder_embed_dim, task.source_dictionary.pad()
+                    )
+
 
         if args.share_all_embeddings:
             # double check all parameters combinations are valid
@@ -253,6 +266,22 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             pretrained_embed=pretrained_encoder_embed,
             debug=args.debug if 'debug' in args else False
         )
+
+        if getattr(args,'two_encoders',False):
+            encoder_b=GRUEncoder(
+                dictionary=task.source_dictionary,
+                embed_dim=args.encoder_embed_dim,
+                hidden_size=args.encoder_hidden_size,
+                num_layers=args.encoder_layers,
+                dropout_in=args.encoder_dropout_in,
+                dropout_out=args.encoder_dropout_out,
+                bidirectional=args.encoder_bidirectional,
+                pretrained_embed=pretrained_encoder_embed_b,
+                debug=args.debug if 'debug' in args else False
+            )
+        else:
+            encoder_b=None
+
         if 'freeze_encoder_weights' in args and  args.freeze_encoder_weights:
             encoder.freeze_weights()
 
@@ -334,7 +363,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             decoder.embed_tokens_b.weight.requires_grad=False
             decoder_b.embed_tokens.weight.requires_grad=False
 
-        r= cls(encoder, decoder, decoder_b)
+        r= cls(encoder, decoder, decoder_b,encoder_b)
         return r
 
     def get_target_factors(self, sample, net_output):
@@ -360,11 +389,16 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
         """
         #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
         encoder_out = self.encoder(src_tokens, src_lengths)
+        encoder_b_out=None
+        if self.encoder_b != None:
+            encoder_b_out = self.encoder_b(src_tokens, src_lengths)
+        else:
+            encoder_b_out=encoder_out
         decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
         if isinstance(self.decoder_b,GRUDecoderTwoInputs):
-            decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_out)
+            decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_b_out)
         else:
-            decoder_b_out = self.decoder_b(prev_output_factors, encoder_out)
+            decoder_b_out = self.decoder_b(prev_output_factors, encoder_b_out)
         return decoder_out, decoder_b_out
 
 @register_model('bahdanau_rnn_two_encdecoders_sync')
