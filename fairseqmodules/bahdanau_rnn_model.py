@@ -222,12 +222,12 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                     args.decoder_embed_dim
                 )
 
-                if args.share_embeddings_two_decoders or args.share_factors_embeddings_two_decoders:
-                    if pretrained_decoder_embed is None:
-                        #Otherwise, pretrained_decoder_embed will be None and will be independently learnt by each decoder
-                        if args.share_embeddings_two_decoders:
-                            pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
-                    pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
+            if args.share_embeddings_two_decoders or args.share_factors_embeddings_two_decoders:
+                if pretrained_decoder_embed is None:
+                    #Otherwise, pretrained_decoder_embed will be None and will be independently learnt by each decoder
+                    if args.share_embeddings_two_decoders:
+                        pretrained_decoder_embed=Embedding(len(task.target_dictionary), args.decoder_embed_dim, task.target_dictionary.pad())
+                pretrained_decoder_embed_b=Embedding(len(task.target_factors_dictionary),args.decoder_embed_dim,task.target_factors_dictionary.pad() )
 
         # one last double check of parameter combinations
         if args.share_decoder_input_output_embed and (
