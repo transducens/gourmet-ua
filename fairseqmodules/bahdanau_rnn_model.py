@@ -159,6 +159,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='One encoder for each output')
         parser.add_argument('--encoders-share-embeddings', default=False, action='store_true',
                             help='If there are two encoders, they share SL word embeddings')
+        parser.add_argument('--decoders-share-state-attention', default=False, action='store_true',
+                            help='The two decoders share state and attention, but time shifted.')
         parser.add_argument('--share-embeddings-two-decoders', default=False, action='store_true',
                             help='Both decoders share embeddings')
         parser.add_argument('--share-factors-embeddings-two-decoders', default=False, action='store_true',
@@ -304,6 +306,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_a',None),
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
             gate_combination= getattr(args,'gate_output_a',False),
+            two_outputs=getattr(args,'decoders_share_state_attention',False),
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -311,59 +314,62 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             debug=args.debug if 'debug' in args else False
         )
 
-        if args.surface_condition_tags:
-            decoder_b = GRUDecoderTwoInputs(
-                dictionary=task.target_factors_dictionary,
-                dictionary_b=task.target_dictionary,
-                embed_dim=args.decoder_embed_dim,
-                hidden_size=args.decoder_hidden_size,
-                out_embed_dim=args.decoder_out_embed_dim,
-                num_layers=args.decoder_layers,
-                dropout_in=args.decoder_dropout_in,
-                dropout_out=args.decoder_dropout_out,
-                attention=options.eval_bool(args.decoder_attention) and not getattr(args,'decoder_b_ignores_encoder',False),
-                encoder_output_units=encoder.output_units,
-                pretrained_embed=pretrained_decoder_embed_b,
-                pretrained_embed_b=pretrained_decoder_embed,
-                share_input_output_embed=args.share_decoder_input_output_embed,
-                b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_b',None),
-                cond_gru=getattr(args,'cond_gru',False) and not getattr(args,'decoder_b_ignores_encoder',False),
-                ignore_encoder_input=getattr(args,'decoder_b_ignores_encoder',False),
-                adaptive_softmax_cutoff=(
-                    options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
-                    if args.criterion == 'adaptive_loss' else None
-                ),
-                debug=args.debug if 'debug' in args else False
-            )
-        else:
-            decoder_b = GRUDecoder(
-                dictionary=task.target_factors_dictionary,
-                embed_dim=args.decoder_embed_dim,
-                hidden_size=args.decoder_hidden_size,
-                out_embed_dim=args.decoder_out_embed_dim,
-                num_layers=args.decoder_layers,
-                dropout_in=args.decoder_dropout_in,
-                dropout_out=args.decoder_dropout_out,
-                attention=options.eval_bool(args.decoder_attention),
-                encoder_output_units=encoder.output_units,
-                pretrained_embed=pretrained_decoder_embed_b,
-                share_input_output_embed=args.share_decoder_input_output_embed,
-                cond_gru=args.cond_gru if 'cond_gru' in args else False,
-                adaptive_softmax_cutoff=(
-                    options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
-                    if args.criterion == 'adaptive_loss' else None
+        decoder_b=None
+        if not getattr(args,'decoders_share_state_attention',False):
+            if args.surface_condition_tags:
+                decoder_b = GRUDecoderTwoInputs(
+                    dictionary=task.target_factors_dictionary,
+                    dictionary_b=task.target_dictionary,
+                    embed_dim=args.decoder_embed_dim,
+                    hidden_size=args.decoder_hidden_size,
+                    out_embed_dim=args.decoder_out_embed_dim,
+                    num_layers=args.decoder_layers,
+                    dropout_in=args.decoder_dropout_in,
+                    dropout_out=args.decoder_dropout_out,
+                    attention=options.eval_bool(args.decoder_attention) and not getattr(args,'decoder_b_ignores_encoder',False),
+                    encoder_output_units=encoder.output_units,
+                    pretrained_embed=pretrained_decoder_embed_b,
+                    pretrained_embed_b=pretrained_decoder_embed,
+                    share_input_output_embed=args.share_decoder_input_output_embed,
+                    b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_b',None),
+                    cond_gru=getattr(args,'cond_gru',False) and not getattr(args,'decoder_b_ignores_encoder',False),
+                    ignore_encoder_input=getattr(args,'decoder_b_ignores_encoder',False),
+                    adaptive_softmax_cutoff=(
+                        options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                        if args.criterion == 'adaptive_loss' else None
                     ),
-                debug=args.debug if 'debug' in args else False
-        )
+                    debug=args.debug if 'debug' in args else False
+                )
+            else:
+                decoder_b = GRUDecoder(
+                    dictionary=task.target_factors_dictionary,
+                    embed_dim=args.decoder_embed_dim,
+                    hidden_size=args.decoder_hidden_size,
+                    out_embed_dim=args.decoder_out_embed_dim,
+                    num_layers=args.decoder_layers,
+                    dropout_in=args.decoder_dropout_in,
+                    dropout_out=args.decoder_dropout_out,
+                    attention=options.eval_bool(args.decoder_attention),
+                    encoder_output_units=encoder.output_units,
+                    pretrained_embed=pretrained_decoder_embed_b,
+                    share_input_output_embed=args.share_decoder_input_output_embed,
+                    cond_gru=args.cond_gru if 'cond_gru' in args else False,
+                    adaptive_softmax_cutoff=(
+                        options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                        if args.criterion == 'adaptive_loss' else None
+                        ),
+                    debug=args.debug if 'debug' in args else False
+            )
 
         if  getattr(args,'decoder_freeze_embed',None):
             decoder.embed_tokens.weight.requires_grad=False
-            if args.surface_condition_tags:
+            if args.surface_condition_tags and decoder_b is not None:
                 decoder_b.embed_tokens_b.weight.requires_grad=False
 
         if  getattr(args,'decoder_freeze_factor_embed',None):
             decoder.embed_tokens_b.weight.requires_grad=False
-            decoder_b.embed_tokens.weight.requires_grad=False
+            if decoder_b is not None:
+                decoder_b.embed_tokens.weight.requires_grad=False
 
         r= cls(encoder, decoder, decoder_b,encoder_b)
         return r
@@ -396,12 +402,25 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             encoder_b_out = self.encoder_b(src_tokens, src_lengths)
         else:
             encoder_b_out=encoder_out
-        decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
-        if isinstance(self.decoder_b,GRUDecoderTwoInputs):
-            decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_b_out)
+
+        if self.decoder.two_outputs:
+            input_1= prev_output_tokens.new_zeros([prev_output_tokens.size(0),prev_output_tokens.size(1)*2])
+            input_2= prev_output_tokens.new_zeros([prev_output_tokens.size(0),prev_output_tokens.size(1)*2])
+            for i in range(prev_output_tokens.size(1)):
+                input_1[:,2*i+1]=prev_output_tokens[:,i]
+                input_2[:,2*i+1]=cur_output_factors[:,i]
+            for i in range(prev_output_factors.size(1)):
+                input_1[:,2*i]=prev_output_tokens[:,i]
+                input_2[:,2*i]=prev_output_factors[:,i]
+            #TODO: decoder_outs?
+            decoder_out = self.decoder(input_1,input_2, encoder_out)
         else:
-            decoder_b_out = self.decoder_b(prev_output_factors, encoder_b_out)
-        return decoder_out, decoder_b_out
+            decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
+            if isinstance(self.decoder_b,GRUDecoderTwoInputs):
+                decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_b_out)
+            else:
+                decoder_b_out = self.decoder_b(prev_output_factors, encoder_b_out)
+            return decoder_out, decoder_b_out
 
 @register_model('bahdanau_rnn_two_encdecoders_sync')
 class BahdanauRNNTwoEncDecodersSyncModel(BahdanauRNNModel):
@@ -1852,7 +1871,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self, dictionary,dictionary_b,size_input_b=None, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None, pretrained_embed_b=None,
-        share_input_output_embed=False, b_condition_end=False , cond_gru=False , ignore_encoder_input=False , gate_combination=False, adaptive_softmax_cutoff=None,debug=False
+        share_input_output_embed=False, b_condition_end=False , cond_gru=False , ignore_encoder_input=False , gate_combination=False, two_outputs=False , adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
@@ -1867,6 +1886,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.b_condition_end = b_condition_end
         self.cond_gru=cond_gru
         self.gate_combination=gate_combination
+
+        self.two_outputs=two_outputs
 
         self.adaptive_softmax = None
         num_embeddings = len(dictionary)
@@ -1937,6 +1958,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.logit_prev_b=Linear(embed_dim if self.embed_tokens_b else size_input_b, out_embed_dim, dropout=dropout_out)
         else:
             self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
+            self.logit_prev_b=None
 
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
@@ -1954,6 +1976,29 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                                                     dropout=dropout_out)
         elif not self.share_input_output_embed:
             self.fc_out = Linear(out_embed_dim, num_embeddings, dropout=dropout_out)
+
+        if self.two_outputs:
+            if self.gate_combination:
+                assert False
+            self.logit_prev_b=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
+            self.logit_lstm_b=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
+            if self.b_condition_end:
+                assert False
+            if self.ignore_encoder_input:
+                self.logit_ctx_b=None
+            else:
+                self.logit_ctx_b=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
+            self.activ_deep_output_b=nn.Tanh()
+
+            self.fc_out_b =None
+            self.adaptive_softmax_b=None
+            if adaptive_softmax_cutoff is not None:
+                # setting adaptive_softmax dropout to dropout_out for now but can be redefined
+                self.adaptive_softmax_b = AdaptiveSoftmax(num_embeddings, embed_dim, adaptive_softmax_cutoff,
+                                                        dropout=dropout_out)
+            elif not self.share_input_output_embed:
+                self.fc_out_b = Linear(out_embed_dim, num_embeddings, dropout=dropout_out)
+
 
     def freeze_weights(self):
         #Freeze embeddings
@@ -1985,12 +2030,22 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.logit_tag.freeze_weights()
         self.logit_ctx.freeze_weights()
 
+        if self.two_outputs:
+            assert self.b_condition_end == False
+            self.logit_lstm_b.freeze_weights()
+            self.logit_ctx_b.freeze_weights()
+            self.logit_prev_b.freeze_weights()
+            if  self.fc_out_b is not None:
+                self.fc_out_b.freeze_weights()
+            if self.adaptive_softmax_b is not None:
+                self.adaptive_softmax_b.freeze_weights()
+
         assert self.adaptive_softmax == None
 
         if not self.share_input_output_embed:
             self.fc_out.freeze_weights()
 
-
+    #if self.two_outputs, prev_output_tokens and prev_output_tokens_b are already interleaved
     def forward(self, prev_output_tokens,prev_output_tokens_b, encoder_out_dict, incremental_state=None):
         encoder_out = encoder_out_dict['encoder_out']
         encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
@@ -2139,6 +2194,11 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         # collect outputs across time steps
         x = torch.cat(outs, dim=0).view(seqlen, bsz, self.hidden_size)
 
+        if self.two_outputs:
+            #Extract even and odd positions
+            x_b=x[1::2]
+            x=x[0::2]
+
         # T x B x C -> B x T x C
         x = x.transpose(1, 0)
         #x: bsz x seqlen x hidden_size
@@ -2174,6 +2234,23 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 x = F.linear(x, self.embed_tokens.weight)
             else:
                 x = self.fc_out(x)
+
+        if self.two_outputs:
+            logit_prev_out=self.logit_prev_b(logit_prev_input)
+            logit_lstm_out=self.logit_lstm_b(x_b)
+            if not self.ignore_encoder_input:
+                logit_ctx_out=self.logit_ctx_b( torch.stack(context_vectors).transpose(0,1)  )
+            else:
+                logit_ctx_out=torch.zeros_like(logit_prev_out)
+
+            x_b=self.activ_deep_output_b(logit_ctx_out + logit_prev_out + logit_lstm_out )
+
+            # project back to size of vocabulary
+            if self.adaptive_softmax is None:
+                if self.share_input_output_embed:
+                    x_b = F.linear(x_b, self.embed_tokens_b.weight)
+                else:
+                    x_b = self.fc_out_b(x_b)
 
         if self.debug:
             print("all_hiddens_last_layer: {}".format(all_hiddens_last_layer))
