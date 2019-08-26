@@ -136,7 +136,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
         self.encoder_b=encoder_b
         assert isinstance(self.encoder, FairseqEncoder)
         assert isinstance(self.decoder, GRUDecoderTwoInputs)
-        assert isinstance(self.decoder_b, GRUDecoder) or isinstance(self.decoder_b, GRUDecoderTwoInputs)
+        assert self.decoder_b is None or isinstance(self.decoder_b, GRUDecoder) or isinstance(self.decoder_b, GRUDecoderTwoInputs)
 
     @staticmethod
     def add_args(parser):
@@ -2203,6 +2203,9 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         x = x.transpose(1, 0)
         #x: bsz x seqlen x hidden_size
 
+        if self.two_outputs:
+            x_b=x_b.transpose(1,0)
+
         # srclen x tgtlen x bsz -> bsz x tgtlen x srclen
         if not self.training and self.need_attn:
             attn_scores = attn_scores.transpose(0, 2)
@@ -2214,12 +2217,12 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             e=self.gate_activation(self.gate_linear_ctx(torch.stack(context_vectors).transpose(0,1))+self.gate_linear_lstm(x))
             logit_prev_out=e*self.logit_prev_a(logit_prev_input_a) + (1-e)*self.logit_prev_b(logit_prev_input_b)
         else:
-            logit_prev_out=self.logit_prev(logit_prev_input)
+            logit_prev_out=self.logit_prev(logit_prev_input) if not self.two_outputs else self.logit_prev(logit_prev_input[:,1::2])
         if self.b_condition_end:
             logit_tag_out=self.logit_tag(logit_tag_input)
         logit_lstm_out=self.logit_lstm(x)
         if not self.ignore_encoder_input:
-            logit_ctx_out=self.logit_ctx( torch.stack(context_vectors).transpose(0,1)  )
+            logit_ctx_out=self.logit_ctx( torch.stack(context_vectors).transpose(0,1)  ) if not self.two_outputs else self.logit_ctx( torch.stack(context_vectors[1::2]).transpose(0,1)  )
         else:
             logit_ctx_out=torch.zeros_like(logit_prev_out)
 
@@ -2236,10 +2239,10 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 x = self.fc_out(x)
 
         if self.two_outputs:
-            logit_prev_out=self.logit_prev_b(logit_prev_input)
+            logit_prev_out=self.logit_prev_b(logit_prev_input[:,0::2])
             logit_lstm_out=self.logit_lstm_b(x_b)
             if not self.ignore_encoder_input:
-                logit_ctx_out=self.logit_ctx_b( torch.stack(context_vectors).transpose(0,1)  )
+                logit_ctx_out=self.logit_ctx_b( torch.stack(context_vectors[0::2]).transpose(0,1)  )
             else:
                 logit_ctx_out=torch.zeros_like(logit_prev_out)
 
