@@ -2196,8 +2196,8 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
 
         if self.two_outputs:
             #Extract even and odd positions
-            x_b=x[1::2]
-            x=x[0::2]
+            x_b=x[0::2]
+            x=x[1::2]
 
         # T x B x C -> B x T x C
         x = x.transpose(1, 0)
