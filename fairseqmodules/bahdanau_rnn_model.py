@@ -412,8 +412,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             for i in range(prev_output_factors.size(1)):
                 input_1[:,2*i]=prev_output_tokens[:,i]
                 input_2[:,2*i]=prev_output_factors[:,i]
-            #TODO: decoder_outs?
-            decoder_out = self.decoder(input_1,input_2, encoder_out)
+            decoder_out, decoder_b_out = self.decoder(input_1,input_2, encoder_out)
+            return decoder_out, decoder_b_out
         else:
             decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
             if isinstance(self.decoder_b,GRUDecoderTwoInputs):
@@ -2255,7 +2255,11 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         if self.debug:
             print("all_hiddens_last_layer: {}".format(all_hiddens_last_layer))
         #print("Forward pass.\nx({}):{}\nattn_scores:{}".format(x.size(),x,attn_scores))
-        return x, attn_scores,all_hiddens_last_layer
+
+        if self.two_outputs:
+            return (x, attn_scores,all_hiddens_last_layer),(x_b, attn_scores,all_hiddens_last_layer)
+        else:
+            return x, attn_scores,all_hiddens_last_layer
 
     def reorder_incremental_state(self, incremental_state, new_order):
         super().reorder_incremental_state(incremental_state, new_order)
