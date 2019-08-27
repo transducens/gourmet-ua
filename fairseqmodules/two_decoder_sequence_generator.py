@@ -1127,6 +1127,11 @@ class EnsembleModel(torch.nn.Module):
                     if is_decoder_b_step and dec == model.decoder:
                         input_dict['two_outputs_and_tag_generation']=True
                     decoder_out = list(dec(**input_dict))
+                    if getattr(dec,'two_outputs', False):
+                        if is_decoder_b_step:
+                            decoder_out=decoder_out[1]
+                        else:
+                            decoder_out=decoder_out[0]
                 else:
                     decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out, incremental_state=input_state))
 
