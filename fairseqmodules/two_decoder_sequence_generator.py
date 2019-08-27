@@ -826,7 +826,7 @@ class EnsembleModel(torch.nn.Module):
         self.tag_feedback_first_subword=False
         self.tag_feedback_encoder=False
         self.tag_feedback_state_and_last_subword=False
-        if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)) or  isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) or (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoEncDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)  ) :
+        if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)) or  isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) or (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoEncDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)  ) or (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and models[0].decoder.two_outputs) :
             self.surface_condition_tags=True
             if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel):
                 if models[0].feedback_encoder:
