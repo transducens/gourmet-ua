@@ -169,6 +169,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='Freeze encoder weights')
         parser.add_argument('--decoder-freeze-factor-embed', default=False, action='store_true',
                             help='Freeze factor embeddings')
+        parser.add_argument('--decoder-a-freeze-not-logits', default=False, action='store_true',
+                            help='Freeze surface form decoder, do not freeze logits.')
 
 
 
@@ -360,6 +362,9 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                         ),
                     debug=args.debug if 'debug' in args else False
             )
+
+        if  getattr(args,'decoder_a_freeze_not_logits',None):
+            decoder.freeze_weights(freeze_logits=False)
 
         if  getattr(args,'decoder_freeze_embed',None):
             decoder.embed_tokens.weight.requires_grad=False
@@ -2000,7 +2005,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 self.fc_out_b = Linear(out_embed_dim, num_embeddings, dropout=dropout_out)
 
 
-    def freeze_weights(self):
+    def freeze_weights(self, freeze_logits=True):
         #Freeze embeddings
         if self.embed_tokens:
             self.embed_tokens.weight.requires_grad=False
@@ -2024,26 +2029,27 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             for l in self.layers:
                 l.freeze_weights()
 
-        self.logit_lstm.freeze_weights()
-        self.logit_prev.freeze_weights()
-        if self.b_condition_end:
-            self.logit_tag.freeze_weights()
-        self.logit_ctx.freeze_weights()
+        if freeze_logits:
+            self.logit_lstm.freeze_weights()
+            self.logit_prev.freeze_weights()
+            if self.b_condition_end:
+                self.logit_tag.freeze_weights()
+            self.logit_ctx.freeze_weights()
 
-        if self.two_outputs:
-            assert self.b_condition_end == False
-            self.logit_lstm_b.freeze_weights()
-            self.logit_ctx_b.freeze_weights()
-            self.logit_prev_b.freeze_weights()
-            if  self.fc_out_b is not None:
-                self.fc_out_b.freeze_weights()
-            if self.adaptive_softmax_b is not None:
-                self.adaptive_softmax_b.freeze_weights()
+            if self.two_outputs:
+                assert self.b_condition_end == False
+                self.logit_lstm_b.freeze_weights()
+                self.logit_ctx_b.freeze_weights()
+                self.logit_prev_b.freeze_weights()
+                if  self.fc_out_b is not None:
+                    self.fc_out_b.freeze_weights()
+                if self.adaptive_softmax_b is not None:
+                    self.adaptive_softmax_b.freeze_weights()
 
-        assert self.adaptive_softmax == None
+            assert self.adaptive_softmax == None
 
-        if not self.share_input_output_embed:
-            self.fc_out.freeze_weights()
+            if not self.share_input_output_embed:
+                self.fc_out.freeze_weights()
 
     #if self.two_outputs, prev_output_tokens and prev_output_tokens_b are already interleaved
     def forward(self, prev_output_tokens,prev_output_tokens_b, encoder_out_dict, incremental_state=None,two_outputs_and_tag_generation=False):
