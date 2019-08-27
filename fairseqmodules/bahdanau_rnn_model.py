@@ -2226,7 +2226,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         if x is not None:
             startingIndex=1
             #during decoding, starting index is 0, because we process only one symbol
-            if if incremental_state is not None:
+            if incremental_state is not None:
                 startingIndex=0
 
             #deep output like nematus
