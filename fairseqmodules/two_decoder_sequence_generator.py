@@ -1153,6 +1153,11 @@ class EnsembleModel(torch.nn.Module):
                 if TwoDecoderSequenceGenerator.DEBUG:
                     print("After adjusting inputs: words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b_input ] ))
                 decoder_out = list(dec(tokens_in_a,tokens_in_b_input, encoder_out, incremental_state= self.incremental_states_factors[model] if model in self.models_factors else self.incremental_states[model] ))
+                if getattr(dec,'two_outputs', False):
+                    if is_decoder_b_step:
+                        decoder_out=list(decoder_out[1])
+                    else:
+                        decoder_out=list(decoder_out[0])
         else:
             if self.async and is_decoder_b_step:
                 decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out))
