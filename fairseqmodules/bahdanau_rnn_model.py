@@ -2004,10 +2004,10 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.adaptive_softmax_b=None
             if adaptive_softmax_cutoff is not None:
                 # setting adaptive_softmax dropout to dropout_out for now but can be redefined
-                self.adaptive_softmax_b = AdaptiveSoftmax(num_embeddings, embed_dim, adaptive_softmax_cutoff,
+                self.adaptive_softmax_b = AdaptiveSoftmax(num_embeddings_b, embed_dim, adaptive_softmax_cutoff,
                                                         dropout=dropout_out)
             elif not self.share_input_output_embed:
-                self.fc_out_b = Linear(out_embed_dim, num_embeddings, dropout=dropout_out)
+                self.fc_out_b = Linear(out_embed_dim, num_embeddings_b, dropout=dropout_out)
 
 
     def freeze_weights(self, freeze_logits=True):
