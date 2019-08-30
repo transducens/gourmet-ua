@@ -173,6 +173,8 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='Freeze factor embeddings')
         parser.add_argument('--decoder-a-freeze-not-logits', default=False, action='store_true',
                             help='Freeze surface form decoder, do not freeze logits.')
+        parser.add_argument('--dropout-conditioning-tags', type=float,default=0.0,
+                            help='Dropout full conditioning tags.')
 
 
 
@@ -312,6 +314,7 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             gate_combination= getattr(args,'gate_output_a',False),
             two_outputs=getattr(args,'decoders_share_state_attention',False) or getattr(args,'decoders_share_state_attention_logits',False),
             two_outputs_share_logits=getattr(args,'decoders_share_state_attention_logits',False),
+            dropout_cond_tags=getattr(args,'dropout_conditioning_tags',0.0),
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -1879,11 +1882,14 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self, dictionary,dictionary_b,size_input_b=None, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None, pretrained_embed_b=None,
-        share_input_output_embed=False, b_condition_end=False , cond_gru=False , ignore_encoder_input=False , gate_combination=False, two_outputs=False, two_outputs_share_logits=False , adaptive_softmax_cutoff=None,debug=False
+        share_input_output_embed=False, b_condition_end=False , cond_gru=False ,
+        ignore_encoder_input=False , gate_combination=False, two_outputs=False, two_outputs_share_logits=False
+        dropout_cond_tags=0.0, adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
         self.dropout_out = dropout_out
+        self.dropout_cond_tags=dropout_cond_tags
         self.hidden_size = hidden_size
         self.share_input_output_embed = share_input_output_embed
         self.need_attn = True
@@ -2092,6 +2098,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         else:
             x_b=prev_output_tokens_b
             #x_b represents a hidden state
+        x_b= F.dropout2d(x_b, p=self.dropout_cond_tags, training=self.training)
         x_b = F.dropout(x_b, p=self.dropout_in, training=self.training)
         logit_tag_input=x_b
 
