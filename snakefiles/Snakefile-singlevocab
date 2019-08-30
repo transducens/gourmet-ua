@@ -127,6 +127,10 @@ tokenizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LAN
 tokenizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG2
 detokenizer = moses + "/scripts/tokenizer/detokenizer.perl -l " + LANG2
 
+minLength=1
+if "minLength" in config:
+	minLength=config["minLength"]
+
 sentenceSplitter1 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG1
 sentenceSplitter2 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG2
 
@@ -394,7 +398,7 @@ rule clean:
         "{pref}.clean."+"{lang2}".format(lang2=LANG2),
         "{pref}.lines-retained"
     shell:
-        "{moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.tok {LANG1} {LANG2} {wildcards.pref}.clean 1 100 {wildcards.pref}.lines-retained"
+        "{moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.tok {LANG1} {LANG2} {wildcards.pref}.clean {minLength} 100 {wildcards.pref}.lines-retained"
 
 rule clean_2s:
     input:
