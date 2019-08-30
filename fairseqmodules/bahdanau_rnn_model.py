@@ -1883,7 +1883,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None, pretrained_embed_b=None,
         share_input_output_embed=False, b_condition_end=False , cond_gru=False ,
-        ignore_encoder_input=False , gate_combination=False, two_outputs=False, two_outputs_share_logits=False
+        ignore_encoder_input=False , gate_combination=False, two_outputs=False, two_outputs_share_logits=False,
         dropout_cond_tags=0.0, adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
