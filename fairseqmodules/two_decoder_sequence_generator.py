@@ -826,7 +826,7 @@ class EnsembleModel(torch.nn.Module):
         self.tag_feedback_first_subword=False
         self.tag_feedback_encoder=False
         self.tag_feedback_state_and_last_subword=False
-        if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)) or  isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) or (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoEncDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)  ) :
+        if (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)) or  isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel) or (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoEncDecodersSyncModel) and isinstance(models[0].decoder_b,bahdanau_rnn_model.GRUDecoderTwoInputs)  ) or (isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersSyncModel) and models[0].decoder.two_outputs) :
             self.surface_condition_tags=True
             if isinstance(models[0],bahdanau_rnn_model.BahdanauRNNTwoDecodersMutualInfluenceAsyncModel):
                 if models[0].feedback_encoder:
@@ -946,7 +946,7 @@ class EnsembleModel(torch.nn.Module):
         dummy_steps=[False for i in range(tokens.size(0))]
         forced_word_ids=None
         if is_decoder_b_step:
-            dec = model.decoder_b
+            dec = model.decoder_b if not getattr(model.decoder,'two_outputs',False) else model.decoder
             dict_a=self.tgt_dict_b
             dict_b=self.tgt_dict
             #Factors decoder input: factors, surface forms
@@ -1019,7 +1019,11 @@ class EnsembleModel(torch.nn.Module):
         if self.incremental_states is not None:
             #print("{} {}".format(self.async,is_decoder_b_step))
             if is_decoder_b_step:
-                input_state=  self.incremental_states_b_factors[model] if model in self.models_factors else self.incremental_states_b[model]
+                if not getattr(dec,'two_outputs',False):
+                    input_state=  self.incremental_states_b_factors[model] if model in self.models_factors else self.incremental_states_b[model]
+                else:
+                    #If we are sharing state+attention
+                    input_state=self.incremental_states[model]
 
                 #This structure depends on the particular model and might not work
                 #with models different from LSTM or multi-layer LSTM
@@ -1112,7 +1116,24 @@ class EnsembleModel(torch.nn.Module):
 
                     if TwoDecoderSequenceGenerator.DEBUG:
                         print("After adjusting inputs for async: words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b_input ] ))
-                    decoder_out = list(dec(tokens_in_a, tokens_in_b_input, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out, incremental_state=input_state))
+
+                    #Adjustments for decoders with shared state + attention
+                    tokens_in_a_input=tokens_in_a
+                    if is_decoder_b_step and dec == model.decoder:
+                        #swap inputs: surface forms is always the first input
+                        tokens_in_a_input=tokens_in_b_input
+                        tokens_in_b_input=tokens_in_a
+                    input_dict={ 'prev_output_tokens':tokens_in_a_input, 'prev_output_tokens_b':tokens_in_b_input, 'encoder_out_dict':encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out,'incremental_state':input_state}
+                    if is_decoder_b_step and dec == model.decoder:
+                        input_dict['two_outputs_and_tag_generation']=True
+                    if TwoDecoderSequenceGenerator.DEBUG:
+                        print("Decoder forward input dictionary: {}".format(input_dict))
+                    decoder_out = list(dec(**input_dict))
+                    if getattr(dec,'two_outputs', False):
+                        if is_decoder_b_step:
+                            decoder_out=list(decoder_out[1])
+                        else:
+                            decoder_out=list(decoder_out[0])
                 else:
                     decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out, incremental_state=input_state))
 
@@ -1134,6 +1155,11 @@ class EnsembleModel(torch.nn.Module):
                 if TwoDecoderSequenceGenerator.DEBUG:
                     print("After adjusting inputs: words_in_a: {}\nwords_in_b: {}\n".format( [dict_a.string(ts) for ts in tokens_in_a ],  [dict_b.string(ts) for ts in tokens_in_b_input ] ))
                 decoder_out = list(dec(tokens_in_a,tokens_in_b_input, encoder_out, incremental_state= self.incremental_states_factors[model] if model in self.models_factors else self.incremental_states[model] ))
+                if getattr(dec,'two_outputs', False):
+                    if is_decoder_b_step:
+                        decoder_out=list(decoder_out[1])
+                    else:
+                        decoder_out=list(decoder_out[0])
         else:
             if self.async and is_decoder_b_step:
                 decoder_out = list(dec(tokens_in_a, encoder_out_slfactors if encoder_out_slfactors is not None else encoder_out))
