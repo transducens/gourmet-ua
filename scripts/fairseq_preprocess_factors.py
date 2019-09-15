@@ -171,7 +171,10 @@ def main(args):
 
     #If we are using a second decoder, we need an independent dictionary
     if args.additional_decoder_tl:
-        tgt_factors_dict= build_dictionary([train_path(args.target_lang)], tgt=True,factors=True, add_mark=not args.disable_bpe_marks, add_wait=args.add_wait_action)
+        if args.tgtfactorsdict:
+            tgt_factors_dict=task.load_dictionary(args.tgtfactorsdict)
+        else:
+            tgt_factors_dict= build_dictionary([train_path(args.target_lang)], tgt=True,factors=True, add_mark=not args.disable_bpe_marks, add_wait=args.add_wait_action)
         tgt_factors_dict.save(dict_path(args.target_lang+"factors"))
 
     #If the SL text also contains linguistic factors, create a dictionary for them
@@ -410,6 +413,7 @@ def cli_main():
     parser.add_argument('--async_tags_surface_feed_first', action='store_true',help='Tags async decoder will receive the first subword of the previously generated surface form.')
     parser.add_argument('--async_tags_surface_feed_last', action='store_true',help='Tags async decoder will receive the last subword of the previously generated surface form.')
     parser.add_argument('--source-factors', action='store_true',help='SL text contains interleaved factors')
+    parser.add_argument('--tgtfactorsdict',type='str',help='Path to a target factor dictionary to be reused')
     args = parser.parse_args()
     main(args)
 
