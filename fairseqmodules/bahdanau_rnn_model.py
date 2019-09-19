@@ -151,6 +151,12 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                             help='Surface forms condition tags decoder only at the end, as in lexical model.')
         parser.add_argument('--gate-output-a', default=False, action='store_true',
                             help='Output of surface form decoder constains a gate to control influence of tags.')
+        parser.add_argument('--gate-output-a-beginning', default=False, action='store_true',
+                            help='Gate that controls influence of tags acts before computing the state.')
+        parser.add_argument('--gate-output-a-scalar', default=False, action='store_true',
+                            help='Gate that controls influence of tags produces a scalar instead of a vector.')
+        parser.add_argument('--gate-output-a-nosf', default=False, action='store_true',
+                            help='Surface form input is not affected by the gate.')
         parser.add_argument('--surface-condition-tags', default=False, action='store_true',
                             help='Tag decoder has two inputs: previous timestep tag and previous timestep surface form')
         parser.add_argument('--decoder-b-ignores-encoder', default=False, action='store_true',
@@ -312,6 +318,9 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
             b_condition_end=args.tags_condition_end or getattr(args,'tags_condition_end_a',None),
             cond_gru=args.cond_gru if 'cond_gru' in args else False,
             gate_combination= getattr(args,'gate_output_a',False),
+            gate_combination_beginning =getattr(args,'gate_output_a_beginning',False),
+            gate_combination_scalar =getattr(args,'gate_output_a_scalar',False),
+            gate_combination_nosf =getattr(args,'gate_output_a_nosf',False),
             two_outputs=getattr(args,'decoders_share_state_attention',False) or getattr(args,'decoders_share_state_attention_logits',False),
             two_outputs_share_logits=getattr(args,'decoders_share_state_attention_logits',False),
             dropout_cond_tags=getattr(args,'dropout_conditioning_tags',0.0),
@@ -1883,9 +1892,10 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None, pretrained_embed_b=None,
         share_input_output_embed=False, b_condition_end=False , cond_gru=False ,
-        ignore_encoder_input=False , gate_combination=False, two_outputs=False, two_outputs_share_logits=False,
+        ignore_encoder_input=False , gate_combination=False,  gate_combination_beginning =False,gate_combination_scalar =False,gate_combination_nosf=False,two_outputs=False, two_outputs_share_logits=False,
         dropout_cond_tags=0.0, adaptive_softmax_cutoff=None,debug=False
     ):
+        #TODO: implement gate_combination_beginning =False,gate_combination_scalar =False,gate_combination_nosf=False
         super().__init__(dictionary)
         self.dropout_in = dropout_in
         self.dropout_out = dropout_out
@@ -1900,6 +1910,9 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         self.b_condition_end = b_condition_end
         self.cond_gru=cond_gru
         self.gate_combination=gate_combination
+        self.gate_combination_beginning=gate_combination_beginning
+        self.gate_combination_nosf=gate_combination_nosf
+        self.gate_combination_scalar=gate_combination_scalar
 
         self.two_outputs=two_outputs
         self.two_outputs_share_logits=two_outputs_share_logits
@@ -1966,11 +1979,27 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             ])
 
         if self.gate_combination:
-            self.gate_linear_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
-            self.gate_linear_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
-            self.gate_activation=nn.Sigmoid()
-            self.logit_prev_a=Linear(embed_dim, out_embed_dim, dropout=dropout_out)
-            self.logit_prev_b=Linear(embed_dim if self.embed_tokens_b else size_input_b, out_embed_dim, dropout=dropout_out)
+            if not self.gate_combination_beginning:
+                self.gate_linear_ctx=Linear(encoder_output_units, out_embed_dim if not self.gate_combination_scalar else hidden_size, dropout=dropout_out)
+            self.gate_linear_lstm=Linear(hidden_size, out_embed_dim if not self.gate_combination_scalar else hidden_size, dropout=dropout_out)
+
+            if not self.gate_combination_scalar:
+                self.gate_activation=nn.Sigmoid()
+                self.gate_linear_final=nn.Sequential()
+                self.gate_activation_final=nn.Sequential()
+
+            else:
+                self.gate_activation=nn.Tanh()
+                self.gate_linear_final=Linear(hidden_size, 1, dropout=dropout_out)
+                self.gate_activation_final=nn.Sigmoid()
+            
+            if not self.gate_combination_beginning:
+                self.logit_prev_a=Linear(embed_dim, out_embed_dim, dropout=dropout_out)
+                self.logit_prev_b=Linear(embed_dim if self.embed_tokens_b else size_input_b, out_embed_dim, dropout=dropout_out)
+            else:
+                self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
+                self.logit_prev_b=None
+
         else:
             self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
             self.logit_prev_b=None
@@ -2105,15 +2134,16 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
         logit_prev_input_a=x
         logit_prev_input_b=x_b
 
-        #Concatenate both
-        if not self.b_condition_end:
-            x=torch.cat((x, x_b), dim=-1)
 
         #bsz x seqlen x hidden_size
-        logit_prev_input=x
+        if not self.b_condition_end:
+            logit_prev_input=torch.cat((x, x_b), dim=-1)
+        else:
+            logit_prev_input=x
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
+        x_b = x_b.transpose(0, 1)
 
         all_hiddens_last_layer=[]
 
@@ -2174,14 +2204,28 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             else:
                 context_vector = encoder_outs[0] #TODO: it should be the last state
 
+            e_a=1
+            e_b=1
+            if self.gate_combination and self.gate_combination_beginning:
+                e_b=self.gate_activation_final(self.gate_linear_final(self.gate_activation(self.gate_linear_lstm(prev_hiddens[0]))))
+                e_a=(1-e_b)
+                if self.gate_combination_nosf:
+                    e_a=1
+
+            #Concatenate both
+            if not self.b_condition_end:
+                prev_symbol_input=torch.cat((e_a*x[j,:,:], e_b*x_b[j,:,:]), dim=-1)
+            else:
+                prev_symbol_input=x[j,:,:]
+
             # input to GRU: concatenate context vector and input embeddings
             if self.cond_gru:
-                input = x[j, :, :]
+                input =prev_symbol_input
             else:
                 if self.ignore_encoder_input:
-                    input = x[j, :, :]
+                    input = prev_symbol_input
                 else:
-                    input = torch.cat((x[j, :, :], context_vector), dim=1)
+                    input = torch.cat((prev_symbol_input, context_vector), dim=1)
 
             #TODO: multi-layer IS WRONG
             assert len(self.layers) == 1
@@ -2250,9 +2294,12 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 startingIndex=0
 
             #deep output like nematus
-            if self.gate_combination:
-                e=self.gate_activation(self.gate_linear_ctx(torch.stack(context_vectors).transpose(0,1))+self.gate_linear_lstm(x))
-                logit_prev_out=e*self.logit_prev_a(logit_prev_input_a) + (1-e)*self.logit_prev_b(logit_prev_input_b)
+            if self.gate_combination and not self.gate_combination_beginning:
+                e=self.gate_activation_final(self.gate_linear_final(self.gate_activation(self.gate_linear_ctx(torch.stack(context_vectors).transpose(0,1))+self.gate_linear_lstm(x))))
+                logit_prev_a_factor=(1-e)
+                if self.gate_combination_nosf:
+                    logit_prev_a_factor=1
+                logit_prev_out=logit_prev_a_factor*self.logit_prev_a(logit_prev_input_a) + e*self.logit_prev_b(logit_prev_input_b)
             else:
                 logit_prev_out=self.logit_prev(logit_prev_input) if not self.two_outputs else self.logit_prev(logit_prev_input[:,startingIndex::2])
             if self.b_condition_end:

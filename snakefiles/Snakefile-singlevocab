@@ -145,6 +145,9 @@ trainArgs2=None
 if "trainArgs2" in config:
 	trainArgs2=config["trainArgs2"]
 trainCmd2=""
+interTrainingCmd="echo 'Nothing'"
+if 'interTrainingCmd' in config:
+	interTrainingCmd=config['interTrainingCmd']
 
 selectBestCheckpointTwoStep="select-checkpoint-best-tag-perplexity.sh"
 if 'twoStepSelectBestSurface' in config and config['twoStepSelectBestSurface']:
@@ -279,7 +282,7 @@ rule train_nmt_fairseq:
 		output:
 				"{dir}/checkpoints/checkpoint_best.pt".format(dir=modelDir)
 		shell:
-				"if [ ! -f \"{modelDir}/checkpoints/checkpoint_last.pt\" -o \"{trainCmd2}\" == \"\" ]; then {trainCmd} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train.log; fi; if [ \"{trainCmd2}\" != \"\" ]; then  bash {tools}/scripts/{selectBestCheckpointTwoStep} {modelDir}/checkpoints  ; {trainCmd2} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train2.log ; fi"
+				"if [ ! -f \"{modelDir}/checkpoints/checkpoint_last.pt\" -o \"{trainCmd2}\" == \"\" ]; then {trainCmd} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train.log; fi; if [ \"{trainCmd2}\" != \"\" ]; then  bash {tools}/scripts/{selectBestCheckpointTwoStep} {modelDir}/checkpoints  ; {interTrainingCmd}; {trainCmd2} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train2.log ; fi"
 
 rule choose_best_checkpoint:
 		input:
