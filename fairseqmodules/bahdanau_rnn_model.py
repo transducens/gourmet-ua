@@ -1992,9 +1992,13 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 self.gate_activation=nn.Tanh()
                 self.gate_linear_final=Linear(hidden_size, 1, dropout=dropout_out)
                 self.gate_activation_final=nn.Sigmoid()
-
-            self.logit_prev_a=Linear(embed_dim, out_embed_dim, dropout=dropout_out)
-            self.logit_prev_b=Linear(embed_dim if self.embed_tokens_b else size_input_b, out_embed_dim, dropout=dropout_out)
+            
+            if not self.gate_combination_beginning:
+                self.logit_prev_a=Linear(embed_dim, out_embed_dim, dropout=dropout_out)
+                self.logit_prev_b=Linear(embed_dim if self.embed_tokens_b else size_input_b, out_embed_dim, dropout=dropout_out)
+            else:
+                self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
+                self.logit_prev_b=None
 
         else:
             self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
@@ -2204,7 +2208,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             e_b=1
             if self.gate_combination and self.gate_combination_beginning:
                 e_b=self.gate_activation_final(self.gate_linear_final(self.gate_activation(self.gate_linear_lstm(prev_hiddens[0]))))
-                e_a=(1-e)
+                e_a=(1-e_b)
                 if self.gate_combination_nosf:
                     e_a=1
 
