@@ -413,7 +413,7 @@ def cli_main():
     parser.add_argument('--async_tags_surface_feed_first', action='store_true',help='Tags async decoder will receive the first subword of the previously generated surface form.')
     parser.add_argument('--async_tags_surface_feed_last', action='store_true',help='Tags async decoder will receive the last subword of the previously generated surface form.')
     parser.add_argument('--source-factors', action='store_true',help='SL text contains interleaved factors')
-    parser.add_argument('--tgtfactorsdict',type='str',help='Path to a target factor dictionary to be reused')
+    parser.add_argument('--tgtfactorsdict',type=str,help='Path to a target factor dictionary to be reused')
     args = parser.parse_args()
     main(args)
 

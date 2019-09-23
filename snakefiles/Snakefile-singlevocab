@@ -145,7 +145,7 @@ trainArgs2=None
 if "trainArgs2" in config:
 	trainArgs2=config["trainArgs2"]
 trainCmd2=""
-interTrainingCmd=""
+interTrainingCmd="echo 'Nothing'"
 if 'interTrainingCmd' in config:
 	interTrainingCmd=config['interTrainingCmd']
 
