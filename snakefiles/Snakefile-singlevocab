@@ -145,6 +145,13 @@ trainArgs2=None
 if "trainArgs2" in config:
 	trainArgs2=config["trainArgs2"]
 trainCmd2=""
+
+trainArgs3=None
+if "trainArgs3" in config:
+	trainArgs3=config["trainArgs3"]
+trainCmd3=""
+
+
 interTrainingCmd="echo 'Nothing'"
 if 'interTrainingCmd' in config:
 	interTrainingCmd=config['interTrainingCmd']
@@ -165,6 +172,8 @@ if backend == Backend.FAIRSEQ:
 		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs)
 		if trainArgs2 != None:
 				trainCmd2 ="CUDA_VISIBLE_DEVICES={} python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs2)
+				if trainArgs3 != None:
+					trainCmd3 ="CUDA_VISIBLE_DEVICES={} python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs3)
 
 
 if backend == Backend.MARIAN:
@@ -282,7 +291,7 @@ rule train_nmt_fairseq:
 		output:
 				"{dir}/checkpoints/checkpoint_best.pt".format(dir=modelDir)
 		shell:
-				"if [ ! -f \"{modelDir}/checkpoints/checkpoint_last.pt\" -o \"{trainCmd2}\" == \"\" ]; then {trainCmd} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train.log; fi; if [ \"{trainCmd2}\" != \"\" ]; then  bash {tools}/scripts/{selectBestCheckpointTwoStep} {modelDir}/checkpoints  ; {interTrainingCmd}; {trainCmd2} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train2.log ; fi"
+				"if [ ! -f \"{modelDir}/checkpoints/checkpoint_last.pt\" -o \"{trainCmd2}\" == \"\" ]; then {trainCmd} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train.log; fi; if [ \"{trainCmd2}\" != \"\" ]; then  bash {tools}/scripts/{selectBestCheckpointTwoStep} {modelDir}/checkpoints  ; {interTrainingCmd}; {trainCmd2} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train2.log ; if [  \"{trainCmd3}\" != \"\"  ]; then  {trainCmd3} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train3.log ; fi ; fi"
 
 rule choose_best_checkpoint:
 		input:
