@@ -91,7 +91,8 @@ def main(args, init_distributed=False):
     )
 
     #Frozen parameters will not be loaded from Adams' data
-    adam_ignore=[ i for i,p in enumerate(self.model.parameters()) if not p.requires_grad ]
+    adam_ignore=[ i for i,p in enumerate(model.parameters()) if not p.requires_grad ]
+    print("Ignoring Adam info for frozen parameters {}".format(adam_ignore))
 
     # Load the latest checkpoint if one is available
     if not load_checkpoint(args, trainer, epoch_itr,adam_ignore):
@@ -356,7 +357,7 @@ def load_checkpoint(args, trainer, epoch_itr, adam_ignore_param_indexes=None):
         #Manipulate the checkpoint to be able to load
         #Adam data with frozen parameters
         tmpcp=None
-        if adam_ignore_param_indexes is not None:
+        if adam_ignore_param_indexes is not None and len(adam_ignore_param_indexes) > 0:
             #load checkpoint
             checkpoint=torch.load(checkpoint_path)
             #remove frozen adam indexes
@@ -364,7 +365,7 @@ def load_checkpoint(args, trainer, epoch_itr, adam_ignore_param_indexes=None):
                 checkpoint['last_optimizer_state']['param_groups'][0]['params']=[ p for i,p in enumerate(checkpoint['last_optimizer_state']['param_groups'][0]['params']) if i not in adam_ignore_param_indexes ]
 
                 #save CheckPoint
-                tmpcp=NamedTemporaryFile(delete=False)
+                tmpcp=tempfile.NamedTemporaryFile(delete=False)
                 tmpcp.close()
                 torch.save(checkpoint,tmpcp.name)
                 checkpoint_path=tmpcp.name
