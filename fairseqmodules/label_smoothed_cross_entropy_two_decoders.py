@@ -4,6 +4,8 @@ from fairseq.criterions.label_smoothed_cross_entropy import LabelSmoothedCrossEn
 import torch
 from torch.distributions.bernoulli import Bernoulli
 from fairseq import utils
+#from torch.utils.tensorboard import SummaryWriter
+import time
 
 @register_criterion('label_smoothed_cross_entropy_two_decoders')
 class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCriterion):
@@ -12,6 +14,10 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         self.b_weight = args.b_decoder_weight
         self.debug=args.debug_loss
         self.ignore_tags_distr=  Bernoulli(torch.tensor([args.tags_dropout]))
+        self.summary_writer=None
+
+        #if args.write_tensorboard:
+            #self.summary_writer = SummaryWriter(log_dir=args.write_tensorboard)
 
     @staticmethod
     def add_args(parser):
@@ -24,6 +30,7 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
                             help='Not optimize the tags output of a minitatch with this probability')
         parser.add_argument('--debug-loss', action='store_true',
                             help='Show debug information about how loss is computed for each minibatch')
+        parser.add_argument("--write-tensorboard",help='Write tensor board info to this directory')
 
     def forward(self, model, sample, reduce=True, training=True):
         """Compute the loss for the given sample.
@@ -32,7 +39,21 @@ class LabelSmoothedCrossEntropyTwoDecodersCriterion(LabelSmoothedCrossEntropyCri
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
+        
+        #Attempt to save computation graph
+        if self.summary_writer:
+            self.summary_writer.add_graph(model, [sample['net_input']['src_tokens'][:1],sample['net_input']['src_lengths'][:1], sample['net_input']['prev_output_tokens'][:1], sample['net_input']['prev_output_factors'][:1], sample['net_input']['cur_output_factors'][:1]   ])
+
+            self.summary_writer.close()
+            exit()
+
+
         net_output,net_output_b = model(**sample['net_input'])
+
+        if self.debug:
+            t=time.time()
+            torch.save(net_output,"net_output_master.{}.pt".format(t))
+            torch.save(net_output_b,"net_output_b_master.{}.pt".format(t))
 
         if self.debug:
             print("Net output size: {}".format(net_output[0].size()))

@@ -440,6 +440,9 @@ class BahdanauRNNTwoDecodersSyncModel(BahdanauRNNModel):
                 decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_b_out)
             else:
                 decoder_b_out = self.decoder_b(prev_output_factors, encoder_b_out)
+
+            #Modification to make tracing work
+            #return decoder_out[0], decoder_b_out[0]
             return decoder_out, decoder_b_out
 
 @register_model('bahdanau_rnn_two_encdecoders_sync')
@@ -1978,6 +1981,9 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 for layer in range(num_layers)
             ])
 
+
+        #Deep output
+        self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
         if self.gate_combination:
             if not self.gate_combination_beginning:
                 self.gate_linear_ctx=Linear(encoder_output_units, out_embed_dim if not self.gate_combination_scalar else hidden_size, dropout=dropout_out)
@@ -2004,8 +2010,6 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
             self.logit_prev=Linear(embed_dim+(embed_dim if self.embed_tokens_b else size_input_b) if not self.b_condition_end else embed_dim, out_embed_dim, dropout=dropout_out)
             self.logit_prev_b=None
 
-        #Deep output
-        self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
         if self.b_condition_end:
             self.logit_tag = Linear((embed_dim if self.embed_tokens_b else size_input_b), out_embed_dim, dropout=dropout_out)
         if self.ignore_encoder_input:

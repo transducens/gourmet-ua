@@ -162,9 +162,9 @@ if "translateArgs" in config:
 if backend == Backend.MARIAN:
 		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(trainArgs) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
 if backend == Backend.FAIRSEQ:
-		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs)
+		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs)
 		if trainArgs2 != None:
-				trainCmd2 ="CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs2)
+				trainCmd2 ="CUDA_VISIBLE_DEVICES={} python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs2)
 
 
 if backend == Backend.MARIAN:

@@ -277,6 +277,11 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         if ignore_grad:
             loss *= 0
         optimizer.backward(loss)
+
+        #for name, p in model.named_parameters():
+        #    param_norm = p.grad.data.norm(2)
+        #    print("{}: {}".format(name,param_norm))
+
         return loss, sample_size, logging_output
 
     def valid_step(self, sample, model, criterion):

@@ -1,0 +1,351 @@
+from os.path import join
+from enum import Enum
+
+class Backend(Enum):
+	MARIAN=0
+	FAIRSEQ=1
+
+backend=Backend.MARIAN
+if "fairseq" in config:
+		if config["fairseq"]:
+				backend=Backend.FAIRSEQ
+
+preprocessTwoDecoders=False
+if "preprocessTwoDecoders" in config:
+	if config["preprocessTwoDecoders"]:
+		preprocessTwoDecoders=True
+
+preprocessFairseqFlag=""
+if "preprocessAsync" in config:
+	if config["preprocessAsync"]:
+		preprocessFairseqFlag=preprocessFairseqFlag+"--disable_bpe_marks"
+
+if "preprocessOnlyFirstSubword" in config:
+	if config["preprocessOnlyFirstSubword"]:
+		preprocessFairseqFlag=preprocessFairseqFlag+" --async_tags_surface_feed_first"
+
+if "preprocessOnlyLastSubword" in config:
+	if config["preprocessOnlyLastSubword"]:
+		preprocessFairseqFlag=preprocessFairseqFlag+" --async_tags_surface_feed_last"
+
+if "preprocessAddWait" in config:
+	if config["preprocessAddWait"]:
+		preprocessFairseqFlag=preprocessFairseqFlag+" --add_wait_action"
+
+
+
+
+#Output dirs
+permanentDir = config["permanentDir"]
+corpusDir = permanentDir + "/corpus"
+evalDir = permanentDir + "/eval"
+modelDir = permanentDir + "/model"
+
+#Software dependencies
+marian=config["marianDir"]
+moses=config["mosesDir"]
+subword_nmt=config["subwordNmtDir"]
+bpeOperations=config["bpeOperations"]
+tools=config["toolsDir"]
+smartSegmentation=config["smartSegmentationDir"]
+
+#Multisource
+ssuffix=None
+if "ssuffix" in config:
+    ssuffix=config["ssuffix"]
+wwMark="gourmetwwtranslation"
+if "wwMark" in config:
+    wwMark=config["wwMark"]
+swapInputs=False
+if "swapInputs" in config:
+    if config["swapInputs"]:
+        swapInputs=True
+
+#Interleaving
+interleaving_tl=False
+analyzer_tl=None
+if "analyzer_tl" in config:
+    interleaving_tl=True
+    analyzer_tl=config["analyzer_tl"]
+
+interleaving_sl=False
+analyzer_sl=False
+if "analyzer_sl" in config:
+    interleaving_sl=True
+    analyzer_sl=config["analyzer_sl"]
+
+if interleaving_sl and preprocessTwoDecoders:
+	preprocessFairseqFlag=preprocessFairseqFlag+" --source-factors"
+
+LANG1=config["lang1"]
+LANG2=config["lang2"]
+
+multilangs=[LANG1,LANG2]
+multilangs_test=[LANG1]
+if ssuffix:
+    if swapInputs:
+        multilangs=[LANG2+".2s",LANG1,LANG2]
+        multilangs_test=[LANG2+".2s",LANG1]
+    else:
+        multilangs=[LANG1,LANG2+".2s",LANG2]
+        multilangs_test=[LANG1,LANG2+".2s"]
+
+#Precomputed BPE, vocab, truecasers
+externalVocab=""
+if "externalVocab" in config:
+    externalVocab=config["externalVocab"]
+externalBpe=""
+if "bpeModel" in config:
+    externalBpe=config["bpeModel"]
+
+externalTruecasers={LANG1:"", LANG2:""}
+if "externalTruecasers" in config:
+    externalTruecasers=config["externalTruecasers"]
+
+#Mark for multilingual MT
+addMark={LANG1:"", LANG2:"", LANG2+"."+str(ssuffix):""}
+if "addMark" in config:
+    addMark=config["addMark"]
+
+#Morphological segmentation
+segModel={LANG1:"", LANG2:""}
+if "segModel" in config:
+    segModel=config["segModel"]
+
+segParams=""
+if "segParams" in config:
+    segParams=config["segParams"]
+
+bpeVocThreshold=1
+if "bpeVocThreshold" in config:
+	bpeVocThreshold=config["bpeVocThreshold"]
+
+tokOptions="-a"
+if interleaving_sl or interleaving_tl:
+    tokOptions="-a -no-escape"
+tokenizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG1 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG1
+tokenizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG2
+detokenizer = moses + "/scripts/tokenizer/detokenizer.perl -l " + LANG2
+
+minLength=1
+if "minLength" in config:
+	minLength=config["minLength"]
+
+sentenceSplitter1 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG1
+sentenceSplitter2 = moses + "/scripts/ems/support/split-sentences.perl -b -l " + LANG2
+
+marianModelFile="model.npz.best-translation.npz.decoder.yml"
+trainArgs=""
+if "marianArgs" in config:
+		trainArgs=config["marianArgs"]
+if "trainArgs" in config:
+		trainArgs=config["trainArgs"]
+
+trainArgs2=None
+if "trainArgs2" in config:
+	trainArgs2=config["trainArgs2"]
+trainCmd2=""
+interTrainingCmd=""
+if 'interTrainingCmd' in config:
+	interTrainingCmd=config['interTrainingCmd']
+
+selectBestCheckpointTwoStep="select-checkpoint-best-tag-perplexity.sh"
+if 'twoStepSelectBestSurface' in config and config['twoStepSelectBestSurface']:
+	selectBestCheckpointTwoStep="select-best-checkpoint-best-sf-perplexity.sh"
+
+gpuIdCuda=config["gpuId"].replace(" ",",") if isinstance(config["gpuId"], str) else str(config["gpuId"]).replace(" ",",")
+translateArgs=""
+if "translateArgs" in config:
+	translateArgs=config["translateArgs"]
+
+#NMT commands
+if backend == Backend.MARIAN:
+		trainCmd = "{0}/build/marian -d {1} ".format(marian, config["gpuId"]) + " ".join(trainArgs) + " --valid-log " + permanentDir +"/valid.log --log " + permanentDir + "/train.log"
+if backend == Backend.FAIRSEQ:
+		trainCmd = "CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs)
+		if trainArgs2 != None:
+				trainCmd2 ="CUDA_VISIBLE_DEVICES={} fairseq-train ".format(gpuIdCuda) + " ".join(trainArgs2)
+
+
+if backend == Backend.MARIAN:
+		translateCmd = "{0}/build/marian-decoder --max-length-crop -d {1} --quiet-translation --max-length 100".format(marian, config["gpuId"])
+if backend == Backend.FAIRSEQ:
+		translateCmd = "CUDA_VISIBLE_DEVICES={} python3 {}/scripts/interactive.py {}".format(gpuIdCuda,tools, translateArgs)
+		validateScript=config["validateScript"]
+
+
+
+bleuCmd = moses + "/scripts/generic/multi-bleu-detok.perl"
+chrfCmd = "python3 "+tools + "/chrF/chrF++.py"
+
+#Input data prefixes
+trainPrefixes=config["initCorpusTrainPrefix"]
+devPrefix=config["initCorpusDevPrefix"]
+testPrefixes=config["initCorpusTestPrefix"]
+assert(len(devPrefix) == 1)
+
+############################################# EVALUATION #############################################################
+
+def allTestNames(dataset):
+    names = []
+    for f in dataset:
+        names.append(os.path.basename(f))
+    return names
+
+rule report:
+    input:
+        expand(evalDir+"/{name}.{metric}", name=allTestNames(testPrefixes), metric=["bleu","chrf"])
+    output:
+        evalDir+"/report"
+    run:
+        with open(output[0], "wt") as outHandle:
+            for file in input:
+                with open(file, "rt") as inHandle:
+                    str = inHandle.read()
+                    outHandle.write(os.path.basename(file))
+                    outHandle.write("\t")
+                    outHandle.write(str)
+
+rule multibleu:
+    input:
+        trans=evalDir+"/{name}.output.detokenized"
+        ,
+        ref=corpusDir+"/{name}."+"{lang}".format(lang=LANG2)
+    output:
+        evalDir+"/{name}.bleu"
+    shell:
+        "cat {input.trans} | {bleuCmd} {input.ref} > {output}"
+
+rule chrf:
+    input:
+        trans=evalDir+"/{name}.output.detokenized"
+        ,
+        ref=corpusDir+"/{name}."+"{lang}".format(lang=LANG2)
+    output:
+        evalDir+"/{name}.chrf"
+    shell:
+        "{chrfCmd} -H {input.trans}  -R {input.ref} > {output}"
+
+rule translate_only:
+    input:
+        trans=evalDir+"/in.output.detokenized"
+
+    output:
+        evalDir+"/output"
+    shell:
+      	#"hostname;"
+        "cp {input} {output}"
+
+##########################################  RUNNING MT ENGINE ##########################################
+
+
+if backend == Backend.MARIAN:
+    rule translate_test:
+        input:
+            modelPrevious="{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
+            ,
+            test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test)
+        output:
+            evalDir+"/{name}.output"
+        params:
+            model="{dir}/marian/{modelFile}".format(dir=modelDir, modelFile=marianModelFile)
+
+        shell:
+            "{translateCmd} -i {input.test} -c {params.model} > {output}"
+
+if backend == Backend.FAIRSEQ:
+    rule translate_test_fairseq:
+        input:
+             model="{}/checkpoints/checkpoint_best_metric.pt".format(modelDir),
+             test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test),
+             databin=modelDir+"/data-bin"
+        output:
+             evalDir+"/{name}.output"
+        shell:
+             "{translateCmd} --input {input.test} --path {input.model} {input.databin} | grep '^H-' | cut -f 3   > {output}"
+
+rule train_nmt:
+    input:
+        vocab=modelDir+"/vocab."+LANG1+LANG2+".yml",
+        train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs),
+        valid=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
+    output:
+        "{dir}/marian/model.npz.decoder.yml".format(dir=modelDir)
+    params:
+        additionalVocab= lambda wildcards,input:  input.vocab if ssuffix else ""
+    shell:
+        "mkdir -p {modelDir}/marian ;{trainCmd} -t {input.train} --valid-sets {input.valid} --vocabs {input.vocab} {input.vocab} {params.additionalVocab} -m {modelDir}/marian/model.npz"
+
+rule train_nmt_fairseq:
+		input:
+				databin=modelDir+"/data-bin"
+		output:
+				"{dir}/checkpoints/checkpoint_best.pt".format(dir=modelDir)
+		shell:
+				"if [ ! -f \"{modelDir}/checkpoints/checkpoint_last.pt\" -o \"{trainCmd2}\" == \"\" ]; then {trainCmd} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train.log; fi; if [ \"{trainCmd2}\" != \"\" ]; then  bash {tools}/scripts/{selectBestCheckpointTwoStep} {modelDir}/checkpoints  ; {interTrainingCmd}; {trainCmd2} --save-dir {modelDir}/checkpoints {input.databin} &> {modelDir}/train2.log ; fi"
+
+rule choose_best_checkpoint:
+		input:
+				"{dir}/checkpoints/checkpoint_best.pt".format(dir=modelDir)
+		output:
+				"{dir}/checkpoints/checkpoint_best_metric.pt".format(dir=modelDir)
+		shell:
+				"bash {tools}/scripts/select-best-checkpoint-fairseq.sh \"{modelDir}/checkpoints\" \"{corpusDir}/dev.bpe.{LANG1}\" \"{modelDir}/data-bin\" \"{validateScript}\" \"{translateArgs}\" \"{gpuIdCuda}\""
+
+################################################## MARIAN VOCAB ################################################################
+
+ruleorder: make_vocab_yml_from_external > make_vocab_yml
+
+rule make_vocab_yml:
+    input:
+        expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
+    output:
+        modelDir+"/vocab.{lang1}{lang2}.yml".format(lang1=LANG1,lang2=LANG2)
+    shell:
+        "cat {input} | {marian}/build/marian-vocab  > {output}"
+
+rule make_vocab_yml_from_external:
+    input:
+        externalVocab
+    output:
+        modelDir+"/vocab.{lang1}{lang2}.yml".format(lang1=LANG1,lang2=LANG2)
+    shell:
+        "cat {input} > {output}"
+
+rule make_databin_fairseq:
+   input:
+        train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs),
+        dev=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
+   output:
+         directory(modelDir+"/data-bin")
+   shell:
+        "fairseq-preprocess --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 " if not preprocessTwoDecoders else " python3 {tools}/scripts/fairseq_preprocess_factors.py --joined-dictionary  -s {LANG1} -t {LANG2}  --trainpref {corpusDir}/train.clean-bpe --validpref {corpusDir}/dev.bpe --destdir {output} --workers 16 --additional_decoder_tl {preprocessFairseqFlag}"
+
+
+
+
+####################################################### POSTPROCESSING ###########################################################
+
+rule detok:
+    input:
+        "{pref}.output.detruecased"
+    output:
+        "{pref}.output.detokenized"
+    shell:
+        "cat {input}  | {detokenizer} > {output}"
+
+rule detruecase:
+    input:
+        "{pref}.output.debpe"
+    output:
+        "{pref}.output.detruecased"
+    shell:
+        "cat {input} | {{ if [ \"{interleaving_tl}\" == \"True\" ]; then sed 's:interleaved_[^ ]* ::g'  ; else  cat - ; fi }} | {moses}/scripts/recaser/detruecase.perl > {output}"
+
+rule debpe:
+    input:
+        "{pref}.output"
+    output:
+        "{pref}.output.debpe"
+    shell:
+        "cat {input} | sed -r 's/(@@ )|(@@ ?$)//g' > {output}"
