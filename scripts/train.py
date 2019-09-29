@@ -23,6 +23,7 @@ from fairseq.trainer import Trainer
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.utils import import_user_module
 
+import tempfile
 
 def main(args, init_distributed=False):
     import_user_module(args)
@@ -89,8 +90,11 @@ def main(args, init_distributed=False):
         num_workers=args.num_workers,
     )
 
+    #Frozen parameters will not be loaded from Adams' data
+    adam_ignore=[ i for i,p in enumerate(self.model.parameters()) if not p.requires_grad ]
+
     # Load the latest checkpoint if one is available
-    if not load_checkpoint(args, trainer, epoch_itr):
+    if not load_checkpoint(args, trainer, epoch_itr,adam_ignore):
         trainer.dummy_train_step([dummy_batch])
 
     # Train until the learning rate gets too small
@@ -340,7 +344,7 @@ def save_checkpoint(args, trainer, epoch_itr, val_loss):
                 os.remove(old_chk)
 
 
-def load_checkpoint(args, trainer, epoch_itr):
+def load_checkpoint(args, trainer, epoch_itr, adam_ignore_param_indexes=None):
     """Load a checkpoint and replay dataloader to match."""
     os.makedirs(args.save_dir, exist_ok=True)
     if os.path.isabs(args.restore_file):
@@ -348,8 +352,27 @@ def load_checkpoint(args, trainer, epoch_itr):
     else:
         checkpoint_path = os.path.join(args.save_dir, args.restore_file)
     if os.path.isfile(checkpoint_path):
+
+        #Manipulate the checkpoint to be able to load
+        #Adam data with frozen parameters
+        tmpcp=None
+        if adam_ignore_param_indexes is not None:
+            #load checkpoint
+            checkpoint=torch.load(checkpoint_path)
+            #remove frozen adam indexes
+            if 'last_optimizer_state' in checkpoint:
+                checkpoint['last_optimizer_state']['param_groups'][0]['params']=[ p for i,p in enumerate(checkpoint['last_optimizer_state']['param_groups'][0]['params']) if i not in adam_ignore_param_indexes ]
+
+                #save CheckPoint
+                tmpcp=NamedTemporaryFile(delete=False)
+                tmpcp.close()
+                torch.save(checkpoint,tmpcp.name)
+                checkpoint_path=tmpcp.name
+
         extra_state = trainer.load_checkpoint(checkpoint_path, args.reset_optimizer, args.reset_lr_scheduler,
                                               eval(args.optimizer_overrides))
+        if tmpcp is not None:
+            os.unlink(tmpcp.name)
         if extra_state is not None:
             # replay train iterator to match checkpoint
             epoch_itr.load_state_dict(extra_state['train_iterator'])
