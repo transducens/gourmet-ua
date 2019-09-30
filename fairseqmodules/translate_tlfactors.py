@@ -2,6 +2,8 @@ import sys,os,itertools
 import torch
 import pickle
 
+from collections import defaultdict
+
 from torch.distributions.bernoulli import Bernoulli
 
 from fairseq.tasks import register_task
@@ -65,15 +67,15 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         self.replace_wait_at_sf_input=args.add_wait_action
 
         self.tags_dropout_probs=None
-        self.set_up_adaptive_tag_dropout(self,args)
+        self.set_up_adaptive_tag_dropout(args)
 
     def set_up_adaptive_tag_dropout(self,args):
         if args.adaptive_tag_dropout_stats:
-            d=pickle.load(open("out.pickle","rb"))
+            d=pickle.load(open(args.adaptive_tag_dropout_stats,"rb"))
             self.tags_dropout_probs={}
             for tag in d:
                 tagId=self.tgt_factors_dict.index(tag)
-                self.tags_dropout_probs[tagId]={}
+                self.tags_dropout_probs[tagId]=defaultdict(float)
 
                 totalFreq=sum(  d[tag][k] for k in d[tag] )
                 for w in d[tag]:
@@ -305,11 +307,14 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
              #Apply adaptive tag dropout to sample
              bsz=sample['target_factors'].size(0)
              tmax=sample['target_factors'].size(1)
+            
+             #import pdb; pdb.set_trace()
+
              for i in range(bsz):
                  for t in range(tmax):
-                     tid=sample['target_factors'][i][t]
-                     if tid != self.tgt_factors_dict.pad() and tid != self.tgt_factors_dict.eos():
-                         prob=self.tags_dropout_probs[tid][ sample['target'][i][t] ]
+                     tid=sample['target_factors'][i][t].item()
+                     if tid in self.tags_dropout_probs and tid != self.tgt_factors_dict.pad() and tid != self.tgt_factors_dict.eos():
+                         prob=self.tags_dropout_probs[tid][ sample['target'][i][t].item() ]
                          dist = Bernoulli(torch.tensor([prob]))
                          if dist.sample()[0] == 1.0:
                              sample['target_factors'][i][t]=self.tgt_factors_dict.unk()
