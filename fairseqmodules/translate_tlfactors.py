@@ -1,5 +1,8 @@
 import sys,os,itertools
 import torch
+import pickle
+
+from torch.distributions.bernoulli import Bernoulli
 
 from fairseq.tasks import register_task
 from fairseq.meters import AverageMeter
@@ -28,6 +31,8 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         parser.add_argument('--independent-factors-models',action='store_true',help='When translating with an ensemble of models, even models (starting with 0) are used to produce factors, and odd models are used to produce surface forms.')
         parser.add_argument('--add-wait-action',action='store_true',help='A WAIT special factor token helps to preserve syncronism. At the input of the SF decoder, the WAIT action is replaced with the preevious non-WAIT tag.')
         parser.add_argument('--add-wait-action-no-replace',action='store_true',help='A WAIT special factor token helps to preserve syncronism. At the input of the SF decoder, the WAIT action is NOT replaced with the preevious non-WAIT tag.')
+        parser.add_argument('--adaptive-tag-dropout-stats',help='File with frequencies of tags and surface forms for applying adaptive dropout.')
+        parser.add_argument('--adaptive-tag-dropout-add-smooth',action='store_true',help='Additive smoothing for adaptive tag dropout.')
         parser.add_argument('--debug-beam-search',action='store_true',help='Print debug information during beam search')
 
     @staticmethod
@@ -58,6 +63,30 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         self.src_factors_dict=src_factors_dict
         self.add_wait_action=args.add_wait_action or args.add_wait_action_no_replace
         self.replace_wait_at_sf_input=args.add_wait_action
+
+        self.tags_dropout_probs=None
+        self.set_up_adaptive_tag_dropout(self,args)
+
+    def set_up_adaptive_tag_dropout(self,args):
+        if args.adaptive_tag_dropout_stats:
+            d=pickle.load(open("out.pickle","rb"))
+            self.tags_dropout_probs={}
+            for tag in d:
+                tagId=self.tgt_factors_dict.index(tag)
+                self.tags_dropout_probs[tagId]={}
+
+                totalFreq=sum(  d[tag][k] for k in d[tag] )
+                for w in d[tag]:
+                    if args.adaptive_tag_dropout_add_smooth:
+                        addSmoothNum=totalFreq*1.0/len(d[tag])
+                        addSoothDenom=totalFreq
+                    else:
+                        addSmoothNum=0.0
+                        addSoothDenom=0.0
+                    prob=(d[tag][w]*1.0 + addSmoothNum)/(totalFreq + addSoothDenom )
+                    wId=self.tgt_dict.index(w)
+                    self.tags_dropout_probs[tagId][wId]=prob
+
 
     @classmethod
     def setup_task(cls, args):
@@ -272,6 +301,19 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                   gradient
                 - logging outputs to display while training
         """
+        if self.tags_dropout_probs:
+             #Apply adaptive tag dropout to sample
+             bsz=sample['target_factors'].size(0)
+             tmax=sample['target_factors'].size(1)
+             for i in range(bsz):
+                 for t in range(tmax):
+                     tid=sample['target_factors'][i][t]
+                     if tid != self.tgt_factors_dict.pad() and tid != self.tgt_factors_dict.eos():
+                         prob=self.tags_dropout_probs[tid][ sample['target'][i][t] ]
+                         dist = Bernoulli(torch.tensor([prob]))
+                         if dist.sample()[0] == 1.0:
+                             sample['target_factors'][i][t]=self.tgt_factors_dict.unk()
+
         model.train()
         loss, sample_size, logging_output = criterion(model, sample,training=True)
         if ignore_grad:
