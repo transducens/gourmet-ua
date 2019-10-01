@@ -317,7 +317,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
                          prob=self.tags_dropout_probs[tid][ sample['target'][i][t].item() ]
                          dist = Bernoulli(torch.tensor([prob]))
                          if dist.sample()[0] == 1.0:
-                             sample['target_factors'][i][t]=self.tgt_factors_dict.unk()
+                             sample['net_input']['cur_output_factors'][i][t]=self.tgt_factors_dict.unk()
 
         model.train()
         loss, sample_size, logging_output = criterion(model, sample,training=True)
