@@ -8,7 +8,7 @@ from fairseq.models import (
     FairseqEncoder, FairseqIncrementalDecoder, BaseFairseqModel, register_model,
     register_model_architecture
 )
-from fairseq.models.transformer import TransformerModel
+from fairseq.models.transformer import TransformerModel,base_architecture
 
 @register_model('bahdanau_rnn_two_decoders_sync')
 class TransformerTwoDecodersSyncModel(TransformerModel):
@@ -279,3 +279,7 @@ class TransformerDecoderTwoInputs(FairseqIncrementalDecoder):
             state_dict['{}.version'.format(name)] = torch.Tensor([1])
 
         return state_dict
+
+@register_model_architecture('transformer_two_decoders_sync', 'transformer_two_decoders_sync')
+def transformer_two_decoders_sync(args):
+    base_architecture(args)
