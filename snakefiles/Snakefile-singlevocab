@@ -4,11 +4,16 @@ from enum import Enum
 class Backend(Enum):
 	MARIAN=0
 	FAIRSEQ=1
+	PYTORCH_TRANSLATE=3
 
 backend=Backend.MARIAN
 if "fairseq" in config:
 		if config["fairseq"]:
 				backend=Backend.FAIRSEQ
+
+if "pytorch_translate" in config:
+		if config["pytorch_translate"]:
+				backend=Backend.PYTORCH_TRANSLATE
 
 preprocessTwoDecoders=False
 if "preprocessTwoDecoders" in config:
@@ -179,13 +184,16 @@ if backend == Backend.FAIRSEQ:
 				trainCmd2 ="CUDA_VISIBLE_DEVICES={} python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs2)
 				if trainArgs3 != None:
 					trainCmd3 ="CUDA_VISIBLE_DEVICES={} python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs3)
-
+if backend == Backend.PYTORCH_TRANSLATE:
+		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/pytorch_translate/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs)
 
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder -d {1} --quiet-translation".format(marian, config["gpuId"])
 if backend == Backend.FAIRSEQ:
 		translateCmd = "CUDA_VISIBLE_DEVICES={} python3 {}/scripts/interactive.py {}".format(gpuIdCuda,tools, translateArgs)
 		validateScript=config["validateScript"]
+if backend == Backend.PYTORCH_TRANSLATE:
+		translateCmd = "CUDA_VISIBLE_DEVICES={} python3 {}/pytorch_translate/generate.py {}".format(gpuIdCuda,tools, translateArgs)
 
 
 
@@ -278,6 +286,16 @@ if backend == Backend.FAIRSEQ:
         shell:
              "{translateCmd} --input {input.test} --path {input.model} {input.databin} | grep '^H-' | cut -f 3   > {output}"
 
+if backend == Backend.PYTORCH_TRANSLATE:
+    rule translate_test_pytorch:
+        input:
+             model="{}/checkpoints/averaged_checkpoint_best.pt".format(modelDir),
+             test= expand("{corpusDir}/{{name}}.bpe.{lang}",corpusDir=corpusDir,lang=multilangs_test),
+        output:
+             evalDir+"/{name}.output"
+        shell:
+             "{translateCmd} --input {input.test} --path {input.model} --source-vocab-file {modelDir}/checkpoints/dictionary-{LANG1}.txt --target-vocab-file {modelDir}/checkpoints/dictionary-{LANG2}.txt --translation-output-file {output}"
+
 rule train_nmt:
     input:
         vocab=modelDir+"/vocab."+LANG1+LANG2+".yml",
@@ -289,6 +307,15 @@ rule train_nmt:
         additionalVocab= lambda wildcards,input:  input.vocab if ssuffix else ""
     shell:
         "mkdir -p {modelDir}/marian ;{trainCmd} -t {input.train} --valid-sets {input.valid} --vocabs {input.vocab} {input.vocab} {params.additionalVocab} -m {modelDir}/marian/model.npz"
+
+rule train_nmt_pytorch:
+    input:
+        train=expand("{corpusDir}/train.clean-bpe.{lang}",corpusDir=corpusDir,lang=multilangs),
+        valid=expand("{corpusDir}/dev.bpe.{lang}",corpusDir=corpusDir,lang=multilangs)
+    output:
+        "{dir}/checkpoints/averaged_checkpoint_best.pt".format(dir=modelDir)
+    shell:
+        "mkdir -p {modelDir}/checkpoints;{trainCmd} --train-source-text-file {corpusDir}/train.clean-bpe.{LANG1} --train-target-text-file {corpusDir}/train.clean-bpe.{LANG2} --eval-source-text-file {corpusDir}/dev.bpe.{LANG1} --eval-target-text-file {corpusDir}/dev.bpe.{LANG2}  --save-dir {modelDir}/checkpoints"
 
 rule train_nmt_fairseq:
 		input:
