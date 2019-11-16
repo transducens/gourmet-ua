@@ -130,9 +130,9 @@ if "maxLegthAfterBpe" in config:
 	maxLegthAfterBpe=config["maxLegthAfterBpe"]
 
 
-tokOptions="-a"
-if interleaving_sl or interleaving_tl:
-    tokOptions="-a -no-escape"
+tokOptions="-a -no-escape"
+#if interleaving_sl or interleaving_tl:
+#    tokOptions="-a -no-escape"
 tokenizer_l1 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG1 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG1
 tokenizer_l2 = moses + "/scripts/tokenizer/normalize-punctuation.perl -l " + LANG2 + " | " + moses + "/scripts/tokenizer/tokenizer.perl "+tokOptions+" -l " + LANG2
 detokenizer = moses + "/scripts/tokenizer/detokenizer.perl -l " + LANG2
@@ -185,7 +185,7 @@ if backend == Backend.FAIRSEQ:
 				if trainArgs3 != None:
 					trainCmd3 ="CUDA_VISIBLE_DEVICES={} python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs3)
 if backend == Backend.PYTORCH_TRANSLATE:
-		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/pytorch_translate/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs)
+		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/pytorch_translate/train.py --source-lang {} --target-lang {} ".format(gpuIdCuda,tools,LANG1,LANG2) + " ".join(trainArgs)
 
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder -d {1} --quiet-translation".format(marian, config["gpuId"])
@@ -294,7 +294,7 @@ if backend == Backend.PYTORCH_TRANSLATE:
         output:
              evalDir+"/{name}.output"
         shell:
-             "{translateCmd} --input {input.test} --path {input.model} --source-vocab-file {modelDir}/checkpoints/dictionary-{LANG1}.txt --target-vocab-file {modelDir}/checkpoints/dictionary-{LANG2}.txt --translation-output-file {output}"
+             "{translateCmd} --source-text-file {input.test} --target-text-file {input.test} --path {input.model} --source-vocab-file {modelDir}/checkpoints/dictionary-{LANG1}.txt --target-vocab-file {modelDir}/checkpoints/dictionary-{LANG2}.txt --translation-output-file {output} --translation-probs-file {output}.probs"
 
 rule train_nmt:
     input:
@@ -642,7 +642,7 @@ rule prepare_test:
          ,
          expand(corpusDir+"/{name}.{lang}", name=allTestNames(testPrefixes), lang=LANG2)
     shell:
-         "mkdir -p {corpusDir}; cp -r {input.l1} {input.l2} {corpusDir}"
+         "mkdir -p {corpusDir}; cp -rL {input.l1} {input.l2} {corpusDir}"
 
 rule prepare_test_2s:
     input:
