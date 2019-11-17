@@ -37,8 +37,15 @@ if "preprocessAddWait" in config:
 	if config["preprocessAddWait"]:
 		preprocessFairseqFlag=preprocessFairseqFlag+" --add_wait_action"
 
+charMTpreproc="cat -"
+charMTpostproc="cat -"
+if "charMT" in config and config["charMT"]:
+	charMTpreproc="sed -r 's:([ ]|$):￭\1:'"
+	charMTpostproc="sed 's:￭::g'"
 
-
+externalRetained=""
+if "externalRetained" in config:
+	externalRetained=config["externalRetained"]
 
 #Output dirs
 permanentDir = config["permanentDir"]
@@ -506,7 +513,7 @@ rule debpe:
     output:
         "{pref}.output.debpe"
     shell:
-        "cat {input} | sed -r 's/(@@ )|(@@ ?$)//g' > {output}"
+        "cat {input} | sed -r 's/(@@ )|(@@ ?$)//g' | {charMTpostproc} > {output}"
 
 ##################################### MORPHOLOGICAL SEGMENTATION ##################
 
@@ -545,7 +552,7 @@ rule apply_bpe_test:
     params:
         mark=lambda w: addMark[w.lang]
     shell:
-        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then  {analyzer_tl} {gpuId}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; {subword_nmt}/subword_nmt/apply_bpe.py --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark}  -c {input.vocab} < {input.file} |  sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} > {output}"
+        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then  {analyzer_tl} {gpuId}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; cat {input.file} | {charMTpreproc} | {subword_nmt}/subword_nmt/apply_bpe.py --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark}  -c {input.vocab} |  sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} > {output}"
 
 rule apply_bpe_train:
     input:
@@ -557,7 +564,7 @@ rule apply_bpe_train:
     params:
         mark=lambda w: addMark[w.lang]
     shell:
-        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl} {gpuId}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi; {subword_nmt}/subword_nmt/apply_bpe.py  --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark} -c {input.vocab} < {input.file} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
+        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl} {gpuId}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi;   cat  {input.file} | {charMTpreproc} | {subword_nmt}/subword_nmt/apply_bpe.py  --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark} -c {input.vocab} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
 
 
 rule clean_postbpe:
@@ -570,7 +577,7 @@ rule clean_postbpe:
         ,
         "{pref}.clean-bpe."+"{lang2}".format(lang2=LANG2)
     shell:
-        "cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG1}  ; cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG2}; {moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.clean-bpe-prelengthfilter.nointerl {LANG1} {LANG2} {wildcards.pref}.clean-bpe.nointerl 1 {maxLegthAfterBpe} {wildcards.pref}.clean-bpe.lines-retained ; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1}  > {wildcards.pref}.clean-bpe.{LANG1} ; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2}  > {wildcards.pref}.clean-bpe.{LANG2}"
+        "if [ \"{externalRetained}\" == \"\" ]; then  RETAINED=\"{wildcards.pref}.clean-bpe.lines-retained\" ; else  RETAINED=\"{externalRetained}\" ;fi ;cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG1}  ; cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG2}; {moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.clean-bpe-prelengthfilter.nointerl {LANG1} {LANG2} {wildcards.pref}.clean-bpe.nointerl 1 {maxLegthAfterBpe} $RETAINED ; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1}  > {wildcards.pref}.clean-bpe.{LANG1} ; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2}  > {wildcards.pref}.clean-bpe.{LANG2}"
 
 ruleorder: learn_bpe_external > learn_bpe
 
