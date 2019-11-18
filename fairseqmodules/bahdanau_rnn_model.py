@@ -22,6 +22,8 @@ class BahdanauRNNModel(LSTMModel):
         LSTMModel.add_args(parser)
         parser.add_argument('--cond-gru', default=False, action='store_true',
                             help='Use conditional GRU as in Nematus')
+        parser.add_argument('--disable-prev-word-softmax', default=False, action='store_true',
+                            help='Disable input of the previous word to the softmax layer')
         parser.add_argument('--debug', default=False, action='store_true',
                             help='Print content of minibacthes')
 
@@ -116,6 +118,7 @@ class BahdanauRNNModel(LSTMModel):
             pretrained_embed=pretrained_decoder_embed,
             share_input_output_embed=args.share_decoder_input_output_embed,
             cond_gru=args.cond_gru,
+            disable_prev_word_softmax = args.disable_prev_word_softmax,
             adaptive_softmax_cutoff=(
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
                 if args.criterion == 'adaptive_loss' else None
@@ -1643,7 +1646,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
         self, dictionary, embed_dim=512, hidden_size=512, out_embed_dim=512,
         num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
         encoder_output_units=512, pretrained_embed=None,
-        share_input_output_embed=False, cond_gru=False, adaptive_softmax_cutoff=None,debug=False
+        share_input_output_embed=False, cond_gru=False,disable_prev_word_softmax=False, adaptive_softmax_cutoff=None,debug=False
     ):
         super().__init__(dictionary)
         self.dropout_in = dropout_in
@@ -1653,6 +1656,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
         self.need_attn = True
 
         self.cond_gru=cond_gru
+        self.disable_prev_word_softmax=disable_prev_word_softmax
 
         self.debug=debug
 
@@ -1701,7 +1705,10 @@ class GRUDecoder(FairseqIncrementalDecoder):
 
         #Deep output
         self.logit_lstm=Linear(hidden_size, out_embed_dim, dropout=dropout_out)
-        self.logit_prev=Linear(out_embed_dim, out_embed_dim, dropout=dropout_out)
+        if self.disable_prev_word_softmax:
+            self.logit_prev=None
+        else:
+            self.logit_prev=Linear(out_embed_dim, out_embed_dim, dropout=dropout_out)
         self.logit_ctx=Linear(encoder_output_units, out_embed_dim, dropout=dropout_out)
         self.activ_deep_output=nn.Tanh()
 
@@ -1852,7 +1859,7 @@ class GRUDecoder(FairseqIncrementalDecoder):
 
         #deep output like nematus
         logit_ctx_out=self.logit_ctx( torch.stack(context_vectors).transpose(0,1)  )
-        logit_prev_out=self.logit_prev(logit_prev_input)
+        logit_prev_out=self.logit_prev(logit_prev_input) if self.logit_prev is not None else 0.0
         logit_lstm_out=self.logit_lstm(x)
 
         x=self.activ_deep_output(logit_ctx_out + logit_prev_out + logit_lstm_out )
@@ -1998,7 +2005,7 @@ class GRUDecoderTwoInputs(FairseqIncrementalDecoder):
                 self.gate_activation=nn.Tanh()
                 self.gate_linear_final=Linear(hidden_size, 1, dropout=dropout_out)
                 self.gate_activation_final=nn.Sigmoid()
-            
+
             if not self.gate_combination_beginning:
                 self.logit_prev_a=Linear(embed_dim, out_embed_dim, dropout=dropout_out)
                 self.logit_prev_b=Linear(embed_dim if self.embed_tokens_b else size_input_b, out_embed_dim, dropout=dropout_out)
