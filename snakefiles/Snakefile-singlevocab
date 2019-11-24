@@ -179,7 +179,7 @@ if 'twoStepSelectBestSurface' in config and config['twoStepSelectBestSurface']:
 
 gpuIdCuda=config["gpuId"].replace(" ",",") if isinstance(config["gpuId"], str) else str(config["gpuId"]).replace(" ",",")
 gpuId=config["gpuId"]
-firstGpuId=gpuId.split("")[0]
+firstGpuId=gpuId.split()[0]
 translateArgs=""
 if "translateArgs" in config:
 	translateArgs=config["translateArgs"]
