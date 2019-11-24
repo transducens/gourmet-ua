@@ -40,8 +40,8 @@ if "preprocessAddWait" in config:
 charMTpreproc="cat -"
 charMTpostproc="cat -"
 if "charMT" in config and config["charMT"]:
-	charMTpreproc="sed -r 's:([ ]|$):￭\1:'"
-	charMTpostproc="sed 's:￭::g'"
+	charMTpreproc="sed -r 's:([ ]|$):￮\\1:g'"
+	charMTpostproc="sed 's:￮::g'"
 
 externalRetained=""
 if "externalRetained" in config:
@@ -323,7 +323,7 @@ rule train_nmt_pytorch:
     output:
         "{dir}/checkpoints/averaged_checkpoint_best.pt".format(dir=modelDir)
     shell:
-        "mkdir -p {modelDir}/checkpoints;{trainCmd} --train-source-text-file {corpusDir}/train.clean-bpe.{LANG1} --train-target-text-file {corpusDir}/train.clean-bpe.{LANG2} --eval-source-text-file {corpusDir}/dev.bpe.{LANG1} --eval-target-text-file {corpusDir}/dev.bpe.{LANG2}  --save-dir {modelDir}/checkpoints"
+        "mkdir -p {modelDir}/checkpoints;{trainCmd} --train-source-text-file {corpusDir}/train.clean-bpe.{LANG1} --train-target-text-file {corpusDir}/train.clean-bpe.{LANG2} --eval-source-text-file {corpusDir}/dev.bpe.{LANG1} --eval-target-text-file {corpusDir}/dev.bpe.{LANG2}  --save-dir {modelDir}/checkpoints | tee {modelDir}/train.log "
 
 rule train_nmt_fairseq:
 		input:
@@ -577,7 +577,7 @@ rule clean_postbpe:
         ,
         "{pref}.clean-bpe."+"{lang2}".format(lang2=LANG2)
     shell:
-        "if [ \"{externalRetained}\" == \"\" ]; then  RETAINED=\"{wildcards.pref}.clean-bpe.lines-retained\" ; else  RETAINED=\"{externalRetained}\" ;fi ;cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG1}  ; cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG2}; {moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.clean-bpe-prelengthfilter.nointerl {LANG1} {LANG2} {wildcards.pref}.clean-bpe.nointerl 1 {maxLegthAfterBpe} $RETAINED ; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1}  > {wildcards.pref}.clean-bpe.{LANG1} ; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2}  > {wildcards.pref}.clean-bpe.{LANG2}"
+        "if [ \"{externalRetained}\" == \"\" ]; then  RETAINED=\"{wildcards.pref}.clean-bpe.lines-retained\" ; else  RETAINED=\"{externalRetained}\" ;fi ;cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG1}  ; cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG2}; {moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.clean-bpe-prelengthfilter.nointerl {LANG1} {LANG2} {wildcards.pref}.clean-bpe.nointerl 1 {maxLegthAfterBpe} {wildcards.pref}.clean-bpe.lines-retained ; python3 {tools}/filter-lines-retained.py $RETAINED < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1}  > {wildcards.pref}.clean-bpe.{LANG1} ; python3 {tools}/filter-lines-retained.py $RETAINED < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2}  > {wildcards.pref}.clean-bpe.{LANG2}"
 
 ruleorder: learn_bpe_external > learn_bpe
 
