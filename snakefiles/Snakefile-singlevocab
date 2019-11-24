@@ -168,6 +168,9 @@ if "trainArgs3" in config:
 	trainArgs3=config["trainArgs3"]
 trainCmd3=""
 
+trainArgsConcat=""
+if trainArgsConcat in config:
+	trainArgsConcat=config["trainArgsConcat"]
 
 interTrainingCmd="echo 'Nothing'"
 if 'interTrainingCmd' in config:
@@ -194,7 +197,7 @@ if backend == Backend.FAIRSEQ:
 				if trainArgs3 != None:
 					trainCmd3 ="CUDA_VISIBLE_DEVICES={} python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs3)
 if backend == Backend.PYTORCH_TRANSLATE:
-		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/pytorch_translate/train.py --source-lang {} --target-lang {} ".format(gpuIdCuda,tools,LANG1,LANG2) + " ".join(trainArgs)
+		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/pytorch_translate/train.py --source-lang {} --target-lang {} ".format(gpuIdCuda,tools,LANG1,LANG2) + " ".join(trainArgs)+" "+trainArgsConcat
 
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder -d {1} --quiet-translation".format(marian, config["gpuId"])
