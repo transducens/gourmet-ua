@@ -8,9 +8,10 @@ from fairseq.models import (
     FairseqEncoder, FairseqIncrementalDecoder, BaseFairseqModel, register_model,
     register_model_architecture
 )
-from fairseq.models.transformer import TransformerModel,base_architecture
+from fairseq.models.transformer import TransformerModel,base_architecture, Embedding, PositionalEmbedding, Linear, TransformerEncoder, TransformerDecoderLayer,SinusoidalPositionalEmbedding
+import math
 
-@register_model('bahdanau_rnn_two_decoders_sync')
+@register_model('transformer_two_decoders_sync')
 class TransformerTwoDecodersSyncModel(TransformerModel):
     def __init__(self, encoder,encoder_b, decoder, decoder_b):
         BaseFairseqModel.__init__(self)
@@ -27,7 +28,7 @@ class TransformerTwoDecodersSyncModel(TransformerModel):
     def add_args(parser):
         """Add model-specific arguments to the parser."""
         #Hack to call parent staticmethod
-        LSTMModel.add_args(parser)
+        TransformerModel.add_args(parser)
         parser.add_argument('--embed_combi_method', default='sum', type=str,
                             help='{sum|ffnn} Method to combine two types of embeddigs: sum or feed forward NN' )
 
@@ -43,7 +44,7 @@ class TransformerTwoDecodersSyncModel(TransformerModel):
         if not hasattr(args, 'max_target_positions'):
             args.max_target_positions = 1024
 
-        src_dict, tgt_dict, tgt_dict_b = task.source_dictionary, task.target_dictionary, task.target_factors_async
+        src_dict, tgt_dict, tgt_dict_b = task.source_dictionary, task.target_dictionary, task.target_factors_dictionary
 
         def build_embedding(dictionary, embed_dim, path=None):
             num_embeddings = len(dictionary)
@@ -89,6 +90,37 @@ class TransformerTwoDecodersSyncModel(TransformerModel):
             tgt_dict, args.decoder_embed_dim, args.decoder_embed_path
         ))
         return TransformerTwoDecodersSyncModel(encoder,encoder_b, decoder, decoder_b)
+
+    def get_target_factors(self, sample, net_output):
+        """Get targets from either the sample or the net's output."""
+        return sample['target_factors']
+
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, prev_output_factors, cur_output_factors):
+        """
+        Run the forward pass for an encoder-decoder model.
+        First feed a batch of source tokens through the encoder. Then, feed the
+        encoder output and previous decoder outputs (i.e., input feeding/teacher
+        forcing) to the decoder to produce the next outputs::
+            encoder_out = self.encoder(src_tokens, src_lengths)
+            return self.decoder(prev_output_tokens, encoder_out)
+        Args:
+            src_tokens (LongTensor): tokens in the source language of shape
+                `(batch, src_len)`
+            src_lengths (LongTensor): source sentence lengths of shape `(batch)`
+            prev_output_tokens (LongTensor): previous decoder outputs of shape
+                `(batch, tgt_len)`, for input feeding/teacher forcing
+        Returns:
+            the decoder's output, typically of shape `(batch, tgt_len, vocab)`
+        """
+        #print("Forward: prev_output_tokens:{}\nprev_output_factors:{}\ncur_output_factors:{}\n".format(prev_output_tokens, prev_output_factors, cur_output_factors))
+        encoder_out = self.encoder(src_tokens, src_lengths)
+        encoder_b_out = self.encoder_b(src_tokens, src_lengths)
+
+        decoder_out = self.decoder(prev_output_tokens,cur_output_factors, encoder_out)
+        decoder_b_out = self.decoder_b(prev_output_factors,prev_output_tokens, encoder_b_out)
+
+        return decoder_out, decoder_b_out 
+
 
 
 
@@ -162,7 +194,7 @@ class TransformerDecoderTwoInputs(FairseqIncrementalDecoder):
         if self.normalize:
             self.layer_norm = LayerNorm(embed_dim)
 
-    def forward(self, prev_output_tokens, prev_output_tokens_b, encoder_out=None, incremental_state=None):
+    def forward(self, prev_output_tokens, prev_output_factors, encoder_out=None, incremental_state=None):
         """
         Args:
             prev_output_tokens (LongTensor): previous decoder outputs of shape
@@ -191,7 +223,7 @@ class TransformerDecoderTwoInputs(FairseqIncrementalDecoder):
 
         # embed tokens and positions
         x = self.embed_scale * self.embed_tokens(prev_output_tokens)
-        x_b = self.embed_scale * self.embed_tokens_b(prev_output_tokens_b)
+        x_b = self.embed_scale * self.embed_tokens_b(prev_output_factors)
 
         if self.project_in_dim is not None:
             x = self.project_in_dim(torch.cat([x,x_b],dim=-1))

@@ -8,3 +8,4 @@ from . import custom_architectures
 from . import label_smoothed_cross_entropy_two_decoders
 from . import cross_entropy_two_decoders
 from . import translate_interleaving_force_factors
+from . import transformer_ling_model

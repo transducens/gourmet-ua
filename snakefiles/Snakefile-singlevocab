@@ -40,8 +40,8 @@ if "preprocessAddWait" in config:
 charMTpreproc="cat -"
 charMTpostproc="cat -"
 if "charMT" in config and config["charMT"]:
-	charMTpreproc="sed -r 's:([ ]|$):￭\1:'"
-	charMTpostproc="sed 's:￭::g'"
+	charMTpreproc="sed -r 's:([ ]|$):￮\\1:g'"
+	charMTpostproc="sed 's:￮::g'"
 
 externalRetained=""
 if "externalRetained" in config:
@@ -168,6 +168,9 @@ if "trainArgs3" in config:
 	trainArgs3=config["trainArgs3"]
 trainCmd3=""
 
+trainArgsConcat=""
+if "trainArgsConcat" in config:
+	trainArgsConcat=config["trainArgsConcat"]
 
 interTrainingCmd="echo 'Nothing'"
 if 'interTrainingCmd' in config:
@@ -179,6 +182,7 @@ if 'twoStepSelectBestSurface' in config and config['twoStepSelectBestSurface']:
 
 gpuIdCuda=config["gpuId"].replace(" ",",") if isinstance(config["gpuId"], str) else str(config["gpuId"]).replace(" ",",")
 gpuId=config["gpuId"]
+firstGpuId=str(gpuId).split()[0]
 translateArgs=""
 if "translateArgs" in config:
 	translateArgs=config["translateArgs"]
@@ -193,7 +197,7 @@ if backend == Backend.FAIRSEQ:
 				if trainArgs3 != None:
 					trainCmd3 ="CUDA_VISIBLE_DEVICES={} python3 {}/scripts/train.py ".format(gpuIdCuda,tools) + " ".join(trainArgs3)
 if backend == Backend.PYTORCH_TRANSLATE:
-		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/pytorch_translate/train.py --source-lang {} --target-lang {} ".format(gpuIdCuda,tools,LANG1,LANG2) + " ".join(trainArgs)
+		trainCmd = "CUDA_VISIBLE_DEVICES={}  python3 {}/pytorch_translate/train.py --source-lang {} --target-lang {} ".format(gpuIdCuda,tools,LANG1,LANG2) + " ".join(trainArgs)+" "+trainArgsConcat
 
 if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder -d {1} --quiet-translation".format(marian, config["gpuId"])
@@ -323,7 +327,7 @@ rule train_nmt_pytorch:
     output:
         "{dir}/checkpoints/averaged_checkpoint_best.pt".format(dir=modelDir)
     shell:
-        "mkdir -p {modelDir}/checkpoints;{trainCmd} --train-source-text-file {corpusDir}/train.clean-bpe.{LANG1} --train-target-text-file {corpusDir}/train.clean-bpe.{LANG2} --eval-source-text-file {corpusDir}/dev.bpe.{LANG1} --eval-target-text-file {corpusDir}/dev.bpe.{LANG2}  --save-dir {modelDir}/checkpoints"
+        "mkdir -p {modelDir}/checkpoints;{trainCmd} --train-source-text-file {corpusDir}/train.clean-bpe.{LANG1} --train-target-text-file {corpusDir}/train.clean-bpe.{LANG2} --eval-source-text-file {corpusDir}/dev.bpe.{LANG1} --eval-target-text-file {corpusDir}/dev.bpe.{LANG2}  --save-dir {modelDir}/checkpoints | tee {modelDir}/train.log "
 
 rule train_nmt_fairseq:
 		input:
@@ -552,7 +556,7 @@ rule apply_bpe_test:
     params:
         mark=lambda w: addMark[w.lang]
     shell:
-        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then  {analyzer_tl} {gpuId}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; cat {input.file} | {charMTpreproc} | {subword_nmt}/subword_nmt/apply_bpe.py --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark}  -c {input.vocab} |  sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} > {output}"
+        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl} {firstGpuId}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then  {analyzer_tl} {firstGpuId}  {wildcards.pref}.tok.{wildcards.lang}  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; fi; cat {input.file} | {charMTpreproc} | {subword_nmt}/subword_nmt/apply_bpe.py --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark}  -c {input.vocab} |  sed 's: ￭:@@ :g' |  {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.tok.{wildcards.lang}.analyzed ; else cat - ; fi  }} > {output}"
 
 rule apply_bpe_train:
     input:
@@ -564,7 +568,7 @@ rule apply_bpe_train:
     params:
         mark=lambda w: addMark[w.lang]
     shell:
-        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl} {gpuId}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi;   cat  {input.file} | {charMTpreproc} | {subword_nmt}/subword_nmt/apply_bpe.py  --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark} -c {input.vocab} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
+        "if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then  {analyzer_sl} {firstGpuId}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; fi; if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then if [ ! -f \"{wildcards.pref}.clean.{wildcards.lang}.analyzed\" ]; then {analyzer_tl} {firstGpuId}  {wildcards.pref}.clean.{wildcards.lang}  {wildcards.pref}.clean.{wildcards.lang}.analyzed; fi ; fi;   cat  {input.file} | {charMTpreproc} | {subword_nmt}/subword_nmt/apply_bpe.py  --vocabulary {input.vocab}.bpevoc.{wildcards.lang} --vocabulary-threshold {bpeVocThreshold} --glossaries {wwMark} -c {input.vocab} | sed 's: ￭:@@ :g' |   {{ if [ \"{params.mark}\" != \"\" ]; then  sed 's:^:{params.mark} :' ; else cat -;  fi  }} | {{ if [ \"{interleaving_sl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG1}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed ; else cat - ; fi  }} | {{ if [ \"{interleaving_tl}\" == \"True\" -a \"{wildcards.lang}\" == \"{LANG2}\" ]; then python3 {tools}/scripts/generate-interleaving-corpus.py  {wildcards.pref}.clean.{wildcards.lang}.analyzed  ; else cat - ; fi  }} > {output}"
 
 
 rule clean_postbpe:
@@ -577,7 +581,7 @@ rule clean_postbpe:
         ,
         "{pref}.clean-bpe."+"{lang2}".format(lang2=LANG2)
     shell:
-        "if [ \"{externalRetained}\" == \"\" ]; then  RETAINED=\"{wildcards.pref}.clean-bpe.lines-retained\" ; else  RETAINED=\"{externalRetained}\" ;fi ;cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG1}  ; cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG2}; {moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.clean-bpe-prelengthfilter.nointerl {LANG1} {LANG2} {wildcards.pref}.clean-bpe.nointerl 1 {maxLegthAfterBpe} $RETAINED ; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1}  > {wildcards.pref}.clean-bpe.{LANG1} ; python3 {tools}/filter-lines-retained.py {wildcards.pref}.clean-bpe.lines-retained < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2}  > {wildcards.pref}.clean-bpe.{LANG2}"
+        "if [ \"{externalRetained}\" == \"\" ]; then  RETAINED=\"{wildcards.pref}.clean-bpe.lines-retained\" ; else  RETAINED=\"{externalRetained}\" ;fi ;cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG1}  ; cat {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2} | sed 's:interleaved_[^ ]* ::g' > {wildcards.pref}.clean-bpe-prelengthfilter.nointerl.{LANG2}; {moses}/scripts/training/clean-corpus-n.perl {wildcards.pref}.clean-bpe-prelengthfilter.nointerl {LANG1} {LANG2} {wildcards.pref}.clean-bpe.nointerl 1 {maxLegthAfterBpe} {wildcards.pref}.clean-bpe.lines-retained ; python3 {tools}/filter-lines-retained.py $RETAINED < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG1}  > {wildcards.pref}.clean-bpe.{LANG1} ; python3 {tools}/filter-lines-retained.py $RETAINED < {wildcards.pref}.clean-bpe-prelengthfilter.{LANG2}  > {wildcards.pref}.clean-bpe.{LANG2}"
 
 ruleorder: learn_bpe_external > learn_bpe
 
