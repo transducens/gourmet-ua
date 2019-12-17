@@ -199,7 +199,7 @@ if backend == Backend.MARIAN:
 		translateCmd = "{0}/build/marian-decoder -d {1} --quiet-translation".format(marian, config["gpuId"])
 if backend == Backend.FAIRSEQ:
 		translateCmd = "CUDA_VISIBLE_DEVICES={} python3 {}/scripts/interactive.py {}".format(gpuIdCuda,tools, translateArgs)
-		validateScript=config["validateScript"]
+		validateScript=config["validateScript"].replace("DEV_BPE_TL",corpusDir+"/dev.bpe."+LANG2)
 if backend == Backend.PYTORCH_TRANSLATE:
 		translateCmd = "CUDA_VISIBLE_DEVICES={} python3 {}/pytorch_translate/generate.py {}".format(gpuIdCuda,tools, translateArgs)
 
