@@ -26,27 +26,31 @@ from fairseq.utils import import_user_module
 import tempfile
 
 def main(args, init_distributed=False):
-    import_user_module(args)
+     utils.import_user_module(args)
 
-    if args.max_tokens is None:
-        args.max_tokens = 6000
-    print(args)
+    assert args.max_tokens is not None or args.max_sentences is not None, \
+        'Must specify batch size either with --max-tokens or --max-sentences'
 
+    # Initialize CUDA and distributed training
     if torch.cuda.is_available() and not args.cpu:
         torch.cuda.set_device(args.device_id)
+    np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    if init_distributed:
+        args.distributed_rank = distributed_utils.distributed_init(args)
+
+    if distributed_utils.is_master(args):
+        checkpoint_utils.verify_checkpoint_directory(args.save_dir)
+
+    # Print args
+    print(args)
 
     # Setup task, e.g., translation, language modeling, etc.
     task = tasks.setup_task(args)
 
-    # Load dataset splits
-    load_dataset_splits(task, ['train', 'valid'])
-
-    # Initialize distributed training (after data loading)
-    if init_distributed:
-        import socket
-        args.distributed_rank = distributed_utils.distributed_init(args)
-        print('| initialized host {} as rank {}'.format(socket.gethostname(), args.distributed_rank))
+    # Load valid dataset (we load training data below, based on the latest checkpoint)
+    for valid_sub_split in args.valid_subset.split(','):
+        task.load_dataset(valid_sub_split, combine=False, epoch=0)
 
     # Build model and criterion
     model = task.build_model(args)
@@ -58,45 +62,22 @@ def main(args, init_distributed=False):
         sum(p.numel() for p in model.parameters() if p.requires_grad),
     ))
 
-    # Make a dummy batch to (i) warm the caching allocator and (ii) as a
-    # placeholder DistributedDataParallel when there's an uneven number of
-    # batches per worker.
-    max_positions = utils.resolve_max_positions(
-        task.max_positions(),
-        model.max_positions(),
-    )
-    dummy_batch = task.dataset('train').get_dummy_batch(args.max_tokens, max_positions)
-    oom_batch = task.dataset('train').get_dummy_batch(1, max_positions)
-
     # Build trainer
-    trainer = Trainer(args, task, model, criterion, dummy_batch, oom_batch)
+    trainer = Trainer(args, task, model, criterion)
     print('| training on {} GPUs'.format(args.distributed_world_size))
     print('| max tokens per GPU = {} and max sentences per GPU = {}'.format(
         args.max_tokens,
         args.max_sentences,
     ))
 
-    # Initialize dataloader
-    epoch_itr = task.get_batch_iterator(
-        dataset=task.dataset(args.train_subset),
-        max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences,
-        max_positions=max_positions,
-        ignore_invalid_inputs=True,
-        required_batch_size_multiple=args.required_batch_size_multiple,
-        seed=args.seed,
-        num_shards=args.distributed_world_size,
-        shard_id=args.distributed_rank,
-        num_workers=args.num_workers,
-    )
 
     #Frozen parameters will not be loaded from Adams' data
     adam_ignore=[ i for i,p in enumerate(model.parameters()) if not p.requires_grad ]
     print("Ignoring Adam info for frozen parameters {}".format(adam_ignore))
 
-    # Load the latest checkpoint if one is available
-    if not load_checkpoint(args, trainer, epoch_itr,adam_ignore):
-        trainer.dummy_train_step([dummy_batch])
+    # Load the latest checkpoint if one is available and restore the
+    # corresponding train iterator
+    extra_state, epoch_itr = load_checkpoint(args, trainer,adam_ignore)
 
     # Train until the learning rate gets too small
     max_epoch = args.max_epoch or math.inf
@@ -104,23 +85,34 @@ def main(args, init_distributed=False):
     lr = trainer.get_lr()
     train_meter = StopwatchMeter()
     train_meter.start()
-    valid_losses = [None]
     valid_subsets = args.valid_subset.split(',')
-    while lr > args.min_lr and epoch_itr.epoch < max_epoch and trainer.get_num_updates() < max_update:
+    while (
+        lr > args.min_lr
+        and (epoch_itr.epoch < max_epoch or (epoch_itr.epoch == max_epoch
+            and epoch_itr._next_epoch_itr is not None))
+        and trainer.get_num_updates() < max_update
+    ):
         # train for one epoch
         train(args, trainer, task, epoch_itr)
 
-        if epoch_itr.epoch % args.validate_interval == 0:
+        if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
             valid_losses = validate(args, trainer, task, epoch_itr, valid_subsets)
+        else:
+            valid_losses = [None]
 
         # only use first validation loss to update the learning rate
         lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
 
         # save checkpoint
         if epoch_itr.epoch % args.save_interval == 0:
-            save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
+            checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
+
+        reload_dataset = ':' in getattr(args, 'data', '')
+        # sharded data: get train iterator for next epoch
+        epoch_itr = trainer.get_train_iterator(epoch_itr.epoch, load_dataset=reload_dataset)
     train_meter.stop()
     print('| done training in {:.1f} seconds'.format(train_meter.sum))
+
 
 
 def train(args, trainer, task, epoch_itr):
@@ -345,51 +337,74 @@ def save_checkpoint(args, trainer, epoch_itr, val_loss):
                 os.remove(old_chk)
 
 
-def load_checkpoint(args, trainer, epoch_itr, adam_ignore_param_indexes=None):
-    """Load a checkpoint and replay dataloader to match."""
-    os.makedirs(args.save_dir, exist_ok=True)
-    if os.path.isabs(args.restore_file):
+
+def load_checkpoint(args, trainer,adam_ignore_param_indexes, **passthrough_args):
+    """
+    Load a checkpoint and restore the training iterator.
+    *passthrough_args* will be passed through to
+    ``trainer.get_train_iterator``.
+    """
+    #Copied from checkpoint_utils
+
+    # only one worker should attempt to create the required dir
+    if args.distributed_rank == 0:
+        os.makedirs(args.save_dir, exist_ok=True)
+
+    if args.restore_file == "checkpoint_last.pt":
+        checkpoint_path = os.path.join(args.save_dir, "checkpoint_last.pt")
+    else:
         checkpoint_path = args.restore_file
+
+    #Manipulate the checkpoint to be able to load
+    #Adam data with frozen parameters
+    tmpcp=None
+    if adam_ignore_param_indexes is not None and len(adam_ignore_param_indexes) > 0:
+        #load checkpoint
+        checkpoint=torch.load(checkpoint_path)
+        #remove frozen adam indexes
+        if 'last_optimizer_state' in checkpoint:
+            checkpoint['last_optimizer_state']['param_groups'][0]['params']=[ p for i,p in enumerate(checkpoint['last_optimizer_state']['param_groups'][0]['params']) if i not in adam_ignore_param_indexes ]
+
+            #save CheckPoint
+            tmpcp=tempfile.NamedTemporaryFile(delete=False)
+            tmpcp.close()
+            torch.save(checkpoint,tmpcp.name)
+            checkpoint_path=tmpcp.name
+
+    extra_state = trainer.load_checkpoint(
+        checkpoint_path,
+        args.reset_optimizer,
+        args.reset_lr_scheduler,
+        eval(args.optimizer_overrides),
+        reset_meters=args.reset_meters,
+    )
+
+    if tmpcp is not None:
+        os.unlink(tmpcp.name)
+
+    if (
+        extra_state is not None
+        and "best" in extra_state
+        and not args.reset_optimizer
+        and not args.reset_meters
+    ):
+        save_checkpoint.best = extra_state["best"]
+
+    if extra_state is not None and not args.reset_dataloader:
+        # restore iterator from checkpoint
+        itr_state = extra_state["train_iterator"]
+        epoch_itr = trainer.get_train_iterator(
+            epoch=itr_state["epoch"], load_dataset=True, **passthrough_args
+        )
+        epoch_itr.load_state_dict(itr_state)
     else:
-        checkpoint_path = os.path.join(args.save_dir, args.restore_file)
-    if os.path.isfile(checkpoint_path):
+        epoch_itr = trainer.get_train_iterator(
+            epoch=0, load_dataset=True, **passthrough_args
+        )
 
-        #Manipulate the checkpoint to be able to load
-        #Adam data with frozen parameters
-        tmpcp=None
-        if adam_ignore_param_indexes is not None and len(adam_ignore_param_indexes) > 0:
-            #load checkpoint
-            checkpoint=torch.load(checkpoint_path)
-            #remove frozen adam indexes
-            if 'last_optimizer_state' in checkpoint:
-                checkpoint['last_optimizer_state']['param_groups'][0]['params']=[ p for i,p in enumerate(checkpoint['last_optimizer_state']['param_groups'][0]['params']) if i not in adam_ignore_param_indexes ]
+    trainer.lr_step(epoch_itr.epoch)
 
-                #save CheckPoint
-                tmpcp=tempfile.NamedTemporaryFile(delete=False)
-                tmpcp.close()
-                torch.save(checkpoint,tmpcp.name)
-                checkpoint_path=tmpcp.name
-
-        extra_state = trainer.load_checkpoint(checkpoint_path, args.reset_optimizer, args.reset_lr_scheduler,
-                                              eval(args.optimizer_overrides))
-        if tmpcp is not None:
-            os.unlink(tmpcp.name)
-        if extra_state is not None:
-            # replay train iterator to match checkpoint
-            epoch_itr.load_state_dict(extra_state['train_iterator'])
-
-            print('| loaded checkpoint {} (epoch {} @ {} updates)'.format(
-                checkpoint_path, epoch_itr.epoch, trainer.get_num_updates()))
-
-            trainer.lr_step(epoch_itr.epoch)
-            trainer.lr_step_update(trainer.get_num_updates())
-            if 'best' in extra_state:
-                save_checkpoint.best = extra_state['best']
-        return True
-    else:
-        print('| no existing checkpoint found {}'.format(checkpoint_path))
-    return False
-
+    return extra_state, epoch_itr
 
 def load_dataset_splits(task, splits):
     for split in splits:
@@ -422,9 +437,19 @@ def cli_main():
 
     if args.distributed_init_method is not None:
         # distributed training
-        distributed_main(args.device_id, args)
+        if torch.cuda.device_count() > 1 and not args.distributed_no_spawn:
+            start_rank = args.distributed_rank
+            args.distributed_rank = None  # assign automatically
+            torch.multiprocessing.spawn(
+                fn=distributed_main,
+                args=(args, start_rank),
+                nprocs=torch.cuda.device_count(),
+            )
+        else:
+            distributed_main(args.device_id, args)
     elif args.distributed_world_size > 1:
         # fallback for single node with multiple GPUs
+        assert args.distributed_world_size <= torch.cuda.device_count()
         port = random.randint(10000, 20000)
         args.distributed_init_method = 'tcp://localhost:{port}'.format(port=port)
         args.distributed_rank = None  # set based on device id
