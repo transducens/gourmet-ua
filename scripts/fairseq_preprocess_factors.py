@@ -267,15 +267,15 @@ def main(args):
             os.remove(input_temp_file)
 
     def make_dataset(vocab, input_prefix, output_prefix, lang, num_workers=1):
-        if args.output_format == "binary":
-            make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers)
-        elif args.output_format == "raw":
+        if args.dataset_impl == "raw":
             # Copy original text file to destination folder
             output_text_file = dest_path(
                 output_prefix + ".{}-{}".format(args.source_lang, args.target_lang),
                 lang,
             )
             shutil.copyfile(file_name(input_prefix, lang), output_text_file)
+        else:
+            make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers)    
 
     def make_all(lang, vocab, factors=False, async_factors=False, only_first_subword=False, only_last_subword=False):
         assert not (only_first_subword and only_last_subword)
