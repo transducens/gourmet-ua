@@ -336,5 +336,5 @@ class LanguagePairTLFactorsDataset(fairseq.data.LanguagePairDataset):
         return super().supports_prefetch and getattr(self.tgt_factors, 'supports_prefetch', False)
 
     def prefetch(self, indices):
-        super().prefetch()
+        super().prefetch(indices)
         self.tgt_factors.prefetch(indices)
