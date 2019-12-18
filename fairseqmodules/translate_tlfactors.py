@@ -93,12 +93,14 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
     @classmethod
     def setup_task(cls, args):
         parent_task= translate_early.TranslationEarlyStopTask.setup_task(args)
-        tgt_factors_dict = cls.load_dictionary(os.path.join(args.data[0], 'dict.{}factors.txt'.format(args.target_lang)))
+        paths = args.data.split(os.pathsep)
+        assert len(paths) > 0
+        tgt_factors_dict = cls.load_dictionary(os.path.join(paths[0], 'dict.{}factors.txt'.format(args.target_lang)))
         print('| [{}] dictionary: {} types'.format(args.target_lang+"factors", len(tgt_factors_dict)))
 
         #Load src factors dict if it exists
         src_factors_dict=None
-        src_factors_dict_path=os.path.join(args.data[0], 'dict.{}factors.txt'.format(args.source_lang))
+        src_factors_dict_path=os.path.join(paths[0], 'dict.{}factors.txt'.format(args.source_lang))
         if os.path.exists(src_factors_dict_path):
             src_factors_dict = cls.load_dictionary(src_factors_dict_path)
             print('| [{}] dictionary: {} types'.format(args.source_lang+"factors", len(src_factors_dict)))
@@ -137,7 +139,7 @@ class TranslationTLFactorsTask(translate_early.TranslationEarlyStopTask):
         tgt_only_first_subword_datasets = []
         tgt_only_last_subword_datasets = []
 
-        data_paths = self.args.data
+        data_paths = self.args.data.split(os.pathsep)
 
         for dk, data_path in enumerate(data_paths):
             for k in itertools.count():
