@@ -17,16 +17,17 @@ import random
 
 import torch
 
-from fairseq import distributed_utils, options, progress_bar, tasks, utils
+import numpy as np
+
+from fairseq import checkpoint_utils, distributed_utils, options, progress_bar, tasks, utils
 from fairseq.data import iterators
 from fairseq.trainer import Trainer
 from fairseq.meters import AverageMeter, StopwatchMeter
-from fairseq.utils import import_user_module
 
 import tempfile
 
 def main(args, init_distributed=False):
-     utils.import_user_module(args)
+    utils.import_user_module(args)
 
     assert args.max_tokens is not None or args.max_sentences is not None, \
         'Must specify batch size either with --max-tokens or --max-sentences'
@@ -338,7 +339,7 @@ def save_checkpoint(args, trainer, epoch_itr, val_loss):
 
 
 
-def load_checkpoint(args, trainer,adam_ignore_param_indexes, **passthrough_args):
+def load_checkpoint(args, trainer,adam_ignore_param_indexes):
     """
     Load a checkpoint and restore the training iterator.
     *passthrough_args* will be passed through to
@@ -393,14 +394,10 @@ def load_checkpoint(args, trainer,adam_ignore_param_indexes, **passthrough_args)
     if extra_state is not None and not args.reset_dataloader:
         # restore iterator from checkpoint
         itr_state = extra_state["train_iterator"]
-        epoch_itr = trainer.get_train_iterator(
-            epoch=itr_state["epoch"], load_dataset=True, **passthrough_args
-        )
+        epoch_itr = trainer.get_train_iterator( epoch=itr_state["epoch"])
         epoch_itr.load_state_dict(itr_state)
     else:
-        epoch_itr = trainer.get_train_iterator(
-            epoch=0, load_dataset=True, **passthrough_args
-        )
+        epoch_itr = trainer.get_train_iterator( epoch=0)
 
     trainer.lr_step(epoch_itr.epoch)
 
@@ -455,6 +452,19 @@ def cli_main():
         args.distributed_rank = None  # set based on device id
         if max(args.update_freq) > 1 and args.ddp_backend != 'no_c10d':
             print('| NOTE: you may get better performance with: --ddp-backend=no_c10d')
+        
+        import sys
+        #Ensure spawned processes can import modules
+        module_path = getattr(args, 'user_dir', None)
+        if module_path is not None:
+            module_path = os.path.abspath(args.user_dir)
+            if not os.path.exists(module_path):
+                fairseq_rel_path = os.path.join(os.path.dirname(__file__), '..', args.user_dir)
+                if os.path.exists(fairseq_rel_path):
+                    module_path = fairseq_rel_path
+            module_parent, module_name = os.path.split(module_path)
+            sys.path.insert(0, module_parent)
+
         torch.multiprocessing.spawn(
             fn=distributed_main,
             args=(args, ),

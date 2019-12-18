@@ -51,9 +51,9 @@ class TranslationEarlyStopTask(fairseq.tasks.translation.TranslationTask):
 
             self.valid_loss_meter.reset()
 
-    def get_batch_iterator(self, dataset, max_tokens=None, max_sentences=None, max_positions=None,ignore_invalid_inputs=False, required_batch_size_multiple=1,seed=1, num_shards=1, shard_id=0, num_workers=0):
+    def get_batch_iterator(self, dataset, max_tokens=None, max_sentences=None, max_positions=None,ignore_invalid_inputs=False, required_batch_size_multiple=1,seed=1, num_shards=1, shard_id=0, num_workers=0,epoch=0):
          self.update_checkpoint_losses()
-         iterator=super().get_batch_iterator( dataset, max_tokens, max_sentences, max_positions,ignore_invalid_inputs, required_batch_size_multiple,seed, num_shards, shard_id, num_workers)
+         iterator=super().get_batch_iterator( dataset, max_tokens, max_sentences, max_positions,ignore_invalid_inputs, required_batch_size_multiple,seed, num_shards, shard_id, num_workers,epoch)
          return iterator
 
     def aggregate_logging_outputs(self, logging_outputs, criterion):
