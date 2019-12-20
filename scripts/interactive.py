@@ -192,15 +192,14 @@ def main(args):
                 )
 
                 #Re-interleave tags if needed
-                #TODO: here
-                if ['tags'] in hypo:
-                    hypo_tags_str=task.target_factors_dictionary.string(hypo['tokens'].int().cpu())
-                    fulltags=[ t for t in hypo_tags_str if not hypo_tags_str.endswith("@@")]
+                if 'tags' in hypo:
+                    hypo_tags_str=task.target_factors_dictionary.string(hypo['tags'].int().cpu())
+                    fulltags=[ t for t in hypo_tags_str.split() if not hypo_tags_str.endswith("@@")]
                     hypo_sfs=hypo_str.split()
                     new_hypo_l=[]
                     tags_count=0
                     for sf in hypo_sfs:
-                        if len(new_hypo_l) == 0 or (tags_count < len(fulltags) and not new_hypo_l[-1].endswith("@@") ):
+                        if (len(new_hypo_l) == 0 and len(fulltags) > 0) or (tags_count < len(fulltags) and not new_hypo_l[-1].endswith("@@") ):
                             new_hypo_l.append(fulltags[tags_count])
                             tags_count+=1
                         new_hypo_l.append(sf)
