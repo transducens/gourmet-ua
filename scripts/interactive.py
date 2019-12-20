@@ -190,6 +190,22 @@ def main(args):
                     tgt_dict=tgt_dict,
                     remove_bpe=args.remove_bpe,
                 )
+
+                #Re-interleave tags if needed
+                #TODO: here
+                if ['tags'] in hypo:
+                    hypo_tags_str=task.target_factors_dictionary.string(hypo['tokens'].int().cpu())
+                    fulltags=[ t for t in hypo_tags_str if not hypo_tags_str.endswith("@@")]
+                    hypo_sfs=hypo_str.split()
+                    new_hypo_l=[]
+                    tags_count=0
+                    for sf in hypo_sfs:
+                        if len(new_hypo_l) == 0 or (tags_count < len(fulltags) and not new_hypo_l[-1].endswith("@@") ):
+                            new_hypo_l.append(fulltags[tags_count])
+                            tags_count+=1
+                        new_hypo_l.append(sf)
+                    hypo_str=" ".join(new_hypo_l)
+
                 print('H-{}\t{}\t{}'.format(id, hypo['score'], hypo_str))
                 print('P-{}\t{}'.format(
                     id,
