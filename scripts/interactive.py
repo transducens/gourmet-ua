@@ -194,7 +194,7 @@ def main(args):
                 #Re-interleave tags if needed
                 if 'tags' in hypo:
                     hypo_tags_str=task.target_factors_dictionary.string(hypo['tags'].int().cpu())
-                    fulltags=[ t for t in hypo_tags_str.split() if not hypo_tags_str.endswith("@@")]
+                    fulltags=[ t for t in hypo_tags_str.split() if not t.endswith("@@")]
                     hypo_sfs=hypo_str.split()
                     new_hypo_l=[]
                     tags_count=0
