@@ -24,7 +24,7 @@ becomes
 
 > Soon , Satan and these cast - out rebels will be thrown into an abyss for a thousand years .  Жакында Шайтан менен асмандан куулган козголоңчу жин - перилер миң жылга туңгуюкка салынышат .
 
-- Removing Unicode non-standard space characters
+- Removing Unicode non-standard space characters (you might want to add new ones if you apply these scripts to new language pairs).
 
 ## Running the cleaning script
 
