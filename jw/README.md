@@ -13,7 +13,7 @@ We performed the following actions to clean the English-Kyrgyz JW300 parallel co
 
 - Downloading JW300 corpus from Opus.
 - Detecting the language of each sentence with CLD3 and discarding those sentence pairs whose detected language does not match the expected one.
-- Removing sentence pairs that contain Old English words. Only a few hundred parallel sentences were removed.
+- Removing sentence pairs that contain Old English words (list compiled by Mikel Forcada). Only a few hundred parallel sentences were removed.
 - Removing unaligned Bible book references. Very often, the English side of a parallel sentence ends with a reference to a Bible book,
 while the Kyrgyz side does not contain it. References are removed from the English side when they are not present in the other language.
 This task is carried out by means of regular expressions that may need to be adapted for languages different from Kyrgyz. Example:
