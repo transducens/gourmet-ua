@@ -9,11 +9,11 @@ consortium members.
 
 ## Cleaning steps
 
-The script sequentally performs the following actions:
+We performed the following actions to clean the English-Kyrgyz JW300 parallel corpus:
 
 - Downloading JW300 corpus from Opus.
 - Detecting the language of each sentence with CLD3 and discarding those sentence pairs whose detected language does not match the expected one.
-- Removing sentence pairs that contain Old English words.
+- Removing sentence pairs that contain Old English words. Only a few hundred parallel sentences were removed.
 - Removing unaligned Bible book references. Very often, the English side of a parallel sentence ends with a reference to a Bible book,
 while the Kyrgyz side does not contain it. References are removed from the English side when they are not present in the other language.
 This task is carried out by means of regular expressions that may need to be adapted for languages different from Kyrgyz. Example:
@@ -28,16 +28,20 @@ becomes
 
 ## Running the cleaning script
 
+In order to reproduce our cleaning steps, you can:
+
 - Install the python 3 requirements with: `pip install -r requirements.txt`
+
 - Download and clean corpus with: `bash download-clean-jw.sh TL` where `TL` is the ISO 639-1 of the second language of the desired parallel corpus (the first language is always English).
 
-The resulting corpus will be available in the files `jw300.en-TL.clean.TL` `jw300.en-TL.clean.TL`
+The resulting corpus will be available in the files `jw300.en-TL.clean.TL` and `jw300.en-TL.clean.TL`.
+
+It is already tokenized, since the original corpus available at Opus is tokenized too. You might want to make sure that it is tokenized in the same way as other corpora you are using to train your MT system.
 
 ## Modifying the cleaning script
 
 For each cleaning step, the script executes a bash function and creates and intermediate file. If you want to skip a step,
 just comment out the call to the bash function and change the name of the intermediate file expecteded by the next step.
-
 
 
 
